@@ -23,6 +23,9 @@ install_log.txt
 tmp/
 temp/
 
+# ===== 历史运行文件归档（仅本地保留）=====
+archive/
+
 # ===== WorkBuddy 工具目录（项目记忆/技能，非项目代码）=====
 .workbuddy/
 

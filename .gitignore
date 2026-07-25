@@ -1,0 +1,36 @@
+# ===== 虚拟环境（由 setup.bat 重建）=====
+.venv/
+
+# ===== 运行时数据（自动生成，不入版本库）=====
+data/db/
+data/uploads/
+data/wheels/
+# 标注结果图(检测产物,不应留在示例目录)
+data/sample_images/result_*
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ===== 安装日志 =====
+install_log.txt
+*.log
+
+# ===== 临时目录 =====
+%temp%/
+tmp/
+temp/
+
+# ===== WorkBuddy 工具目录（项目记忆/技能，非项目代码）=====
+.workbuddy/
+
+# ===== 系统/编辑器杂项 =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

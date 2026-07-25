@@ -1,0 +1,29 @@
+# ===== 多类隐患智能检测与预警系统 - 依赖清单 =====
+# 说明: torch / torchvision 不在本清单中,由 setup.bat 根据本机是否有
+#       NVIDIA GPU 自动选择安装 CPU 版或 CUDA 版。
+#       如需手动安装:
+#         CPU 版:  pip install torch torchvision
+#         GPU 版:  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#                  (RTX 50 系列需要 cu128；安装脚本失败时会自动回退 cu124/CPU)
+
+# --- YOLOv8 检测框架 ---
+ultralytics>=8.0.0
+
+# --- Web 界面 ---
+streamlit>=1.30.0
+
+# --- 实时视频流(实时检测功能需要,WebRTC 推流,UI 不阻塞) ---
+streamlit-webrtc>=0.47.0
+
+# --- 图像处理 ---
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+
+# --- 数据处理 ---
+pandas>=2.0.0
+
+# --- 图表可视化 ---
+plotly>=5.18.0
+
+# --- 视频转码(视频检测功能需要) ---
+imageio-ffmpeg>=0.4.9

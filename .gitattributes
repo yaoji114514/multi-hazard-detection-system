@@ -1,0 +1,10 @@
+# Windows 批处理文件强制 CRLF 行尾
+# (LF + GBK 中文会导致 cmd 解析错乱、双击闪退,必须 CRLF)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Python / 配置 / 文档用 LF
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf

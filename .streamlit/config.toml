@@ -1,0 +1,4 @@
+# Streamlit 项目级配置
+# 禁用使用统计收集(遥测),参赛项目不收集用户数据
+[browser]
+gatherUsageStats = false

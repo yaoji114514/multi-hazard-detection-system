@@ -5,8 +5,17 @@
 data/db/
 data/uploads/
 data/wheels/
+config/*.local.json
 # 标注结果图(检测产物,不应留在示例目录)
 data/sample_images/result_*
+
+# ===== 本地验证集与评估产物（结构保留，数据不入库）=====
+evaluation/datasets/ppe/images/val/*
+!evaluation/datasets/ppe/images/val/.gitkeep
+evaluation/datasets/ppe/labels/val/*
+!evaluation/datasets/ppe/labels/val/.gitkeep
+evaluation/results/
+evaluation/**/*.cache
 
 # ===== Python 缓存 =====
 __pycache__/

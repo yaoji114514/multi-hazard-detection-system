@@ -1,0 +1,4 @@
+{
+  "webhook": "https://oapi.dingtalk.com/robot/send?access_token=请替换为机器人Webhook中的access_token",
+  "secret": "SEC请替换为机器人的加签密钥"
+}

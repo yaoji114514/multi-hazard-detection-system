@@ -1,8 +1,21 @@
 # 项目共享日志
 
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
-
 ## 2026-07-26 20:30 - 修复实时检测 proj UnboundLocalError
+## 2026-07-26 20:29 - 补记图片检测钉钉通知接入
+
+- 任务：上传图片检测发现红色/黄色预警后，自动向钉钉发送汇总通知。
+- 改动：app.py 新增 dingtalk 导入兜底；新增 _send_image_alert()；在 db.save_record() 成功后调用，通过 st.session_state 防重复。
+- 验证：Python 编译通过；通知失败不阻断检测；配置缺失不中断启动。
+- 遗留：后续可增加 Markdown 格式和图片发送。
+
+## 2026-07-26 20:29 - 修复实时检测通知调用位置
+
+- 任务：另一对话修复 proj UnboundLocalError 后 _send_realtime_violations 调用点丢失。
+- 改动：将调用从 if to_record: 块外移入块内。
+- 验证：编译通过；proj/insp 在作用域内。
+- 遗留：需重启服务后用摄像头实测。
+
 
 - 任务：修复实时摄像头检测功能运行时 UnboundLocalError (画面回退为原图)。
 - 改动：删除 `app.py` 中某行对 `_send_realtime_violations(rt_stats, proj, insp)` 的调用,该调用位于 `if to_record:` 块外部但参数 `proj`/`insp` 仅在该块内赋值,导致无违规帧时报错。

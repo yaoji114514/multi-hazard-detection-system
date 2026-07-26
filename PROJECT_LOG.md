@@ -1,7 +1,13 @@
 # 项目共享日志
 
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
-## 2026-07-26 20:30 - 修复实时检测 proj UnboundLocalError
+
+## 2026-07-26 21:00 - 修正 _send_realtime_violations 调用缩进
+
+- 任务：另一个对话在"修复通知调用位置"时将调用补回,但缩进仍在 `if to_record:` 块外(12 dots,与 if 同级),同样会触发 UnboundLocalError。
+- 改动：将 `_send_realtime_violations(rt_stats, proj, insp)` 从 12 dots 改为 16 dots,使其正确位于 `if to_record:` 块内,与 `proj`/`insp` 赋值同级。同时清理日志中空标题行和重复孤儿条目。
+- 验证：Python 编译通过；缩进已确认在 16 dots；`proj`/`insp` 引用在作用域内。
+- 遗留：需重启服务后用摄像头实测验证钉钉通知链路；`_send_realtime_violations` 函数定义在第 196 行可后续清理。
 ## 2026-07-26 20:29 - 补记图片检测钉钉通知接入
 
 - 任务：上传图片检测发现红色/黄色预警后，自动向钉钉发送汇总通知。
@@ -16,11 +22,6 @@
 - 验证：编译通过；proj/insp 在作用域内。
 - 遗留：需重启服务后用摄像头实测。
 
-
-- 任务：修复实时摄像头检测功能运行时 UnboundLocalError (画面回退为原图)。
-- 改动：删除 `app.py` 中某行对 `_send_realtime_violations(rt_stats, proj, insp)` 的调用,该调用位于 `if to_record:` 块外部但参数 `proj`/`insp` 仅在该块内赋值,导致无违规帧时报错。
-- 验证：Python 编译通过；`proj` 仅剩两处引用均在 `if to_record:` 块内；Streamlit 健康接口 200 ok。
-- 遗留：`_send_realtime_violations` 函数定义仍在第 196 行但无调用方,后续可清理；钉钉通知功能需接入新的触发机制后重新验证。
 
 ## 2026-07-26 20:14 - 接入实时摄像头检测钉钉通知
 

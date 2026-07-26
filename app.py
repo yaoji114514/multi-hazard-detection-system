@@ -702,7 +702,7 @@ elif page == "🎥 实时检测":
                     except Exception as e:
                         with rt_stats["lock"]:
                             rt_stats["last_error"] = f"入库/抓拍失败 {vtype}: {e}"
-            _send_realtime_violations(rt_stats, proj, insp)
+                _send_realtime_violations(rt_stats, proj, insp)
         except Exception as e:
             annotated = img
             with rt_stats["lock"]:

@@ -9,6 +9,14 @@ config/*.local.json
 # 标注结果图(检测产物,不应留在示例目录)
 data/sample_images/result_*
 
+# ===== 素材库大型数据（本地保留，不入版本库）=====
+data/material_library/extracted/
+data/material_library/source_archives/
+data/material_library/raw/
+data/material_library/new_candidates/raw/
+data/material_library/new_candidates/annotated/*.jpg
+data/material_library/new_candidates/annotated/images/
+
 # ===== 本地验证集与评估产物（结构保留，数据不入库）=====
 evaluation/datasets/ppe/images/val/*
 !evaluation/datasets/ppe/images/val/.gitkeep

@@ -2,6 +2,76 @@
 
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
 
+## 2026-07-26 20:30 - 修复实时检测 proj UnboundLocalError
+
+- 任务：修复实时摄像头检测功能运行时 UnboundLocalError (画面回退为原图)。
+- 改动：删除 `app.py` 中某行对 `_send_realtime_violations(rt_stats, proj, insp)` 的调用,该调用位于 `if to_record:` 块外部但参数 `proj`/`insp` 仅在该块内赋值,导致无违规帧时报错。
+- 验证：Python 编译通过；`proj` 仅剩两处引用均在 `if to_record:` 块内；Streamlit 健康接口 200 ok。
+- 遗留：`_send_realtime_violations` 函数定义仍在第 196 行但无调用方,后续可清理；钉钉通知功能需接入新的触发机制后重新验证。
+
+## 2026-07-26 20:14 - 接入实时摄像头检测钉钉通知
+
+- 任务：让实时摄像头检测在发现违规后，以 60 秒节流向钉钉发送汇总预警。
+- 改动：新增 DINGTALK_REALTIME_COOLDOWN 常量；新增 _send_realtime_violations() 通知函数；在 rt_stats 新增通知状态字段并接入重置链路；在 video_frame_callback 违规去重后累加并在入库后调用通知。
+- 验证：Python 编译通过；通知函数与图片检测共用 dingtalk 模块和密钥配置；仅当 _HAS_DINGTALK 为 True 且累积有违规时才发送；60 秒节流避免手机轰炸。
+- 遗留：需启动实时摄像头检测功能验证手机端实际收信效果；后续可增加预留通知间隙配置和钉钉 Markdown 消息格式。
+
+
+## 2026-07-26 15:30 - 完成自动标注 + 复核工具替代纯手动标注
+
+- 任务：避免手动从零画框，改用模型自动打标 + 快速复核的工作流。
+- 改动：
+  - 新建 tools/auto_label.py — 用现有 models/best.pt 对 51 张新图自动打标（YOLO 格式）
+  - 新建 tools/review_tool.py — Streamlit 复核工具，只需点选"有口罩/无口罩"，无需画框
+  - 新建 run_review_tool.bat — 一键启动复核工具（端口 8503）
+- 验证：
+  - 自动标注完成 51 张图，产生 282 个目标标注（Hardhat 49、Safety Vest 31、Person 112、machinery 34 等）
+  - Mask 类检测为 0（模型未学过口罩），因此需通过复核工具人工标注口罩
+  - 复核工具逻辑：复核时点选"有口罩"自动添加 Mask(class 1)标注；点选"无口罩"自动添加 NO-Mask(class 3)标注
+- 遗留：
+  - 运行 run_review_tool.bat 逐张复核口罩状态（51 张图，每张点一下即可）
+  - 复核全部完成后，可运行 tools/evaluate_model.py 验证精度提升
+  - 若仍嫌复核麻烦，可用 Ultralytics Hub 寻找专用口罩检测模型直接替换自动标注结果
+
+## 2026-07-26 15:00 - 完成工地工人PPE素材收集与标注入口搭建
+
+- 任务：搜索并下载 50 张工地工人同时佩戴安全帽+反光衣+口罩的图片，以提高模型对口罩检测的精度；建立人工标注流程。
+- 改动：
+  - 新建 data/material_library/new_candidates/raw/ 存放 51 张下载图片（42 张高清）
+  - 新建 data/material_library/new_candidates/annotated/ 标注目录（含 data.yaml 匹配模型 10 类）
+  - 新建 data/material_library/new_candidates/inventory.json 素材清单
+  - 新建 tools/label_tool.py 基于 Streamlit 的 YOLO 格式标注工具
+  - 新建 run_label_tool.bat 一键启动标注工具（端口 8502）
+- 验证：
+  - Roboflow 已有 1,613 张带标注图片，但 mask 类仅 1 张（train 集 1 实例）→ 确认必须补充口罩图片
+  - bing-image-downloader 成功从 Bing 搜索下载 51 张工地 PPE 图片
+  - label_tool.py 语法检查通过
+- 遗留：
+  - 51 张新图片尚无标注，需人工运行 run_label_tool.bat（或 streamlit run tools/label_tool.py --server.port 8502）逐张标注
+  - 标注全部完成后，可将 annotated/ 数据加入 evaluation/datasets/ppe/ 进行模型验证
+  - 后续可继续搜索更多 mask+helmet+vest 同框图（当前边际收益递减，51 张+现有 1,613 张已够）
+
+## 2026-07-25 21:56 - 验证钉钉机器人实机发送
+
+- 任务：使用用户本机填写的 Webhook 和加签密钥验证钉钉手机通知链路。
+- 改动：未改业务代码；执行独立测试脚本发送一条“隐患预警 - 通信测试”消息。
+- 验证：钉钉接口返回成功并接受消息，Webhook、加签和电脑出网链路均有效；本地密钥未输出且继续受 Git 忽略保护。
+- 遗留：等待用户确认手机端实际收到消息；确认后再接入图片检测预警。
+
+## 2026-07-25 21:53 - 建立钉钉通知测试链路
+
+- 任务：为电脑端检测服务向手机发送预警建立独立的钉钉机器人通信入口。
+- 改动：新增 `src/dingtalk.py` 实现机器人加签、配置校验和文本发送；新增 `tools/test_dingtalk.py` 测试命令及无密钥示例配置；创建被 Git 忽略的本地配置 `config/dingtalk.local.json`，并更新 `.gitignore` 防止密钥入库。
+- 验证：Python 语法编译通过；固定时间戳加签 URL 构造通过；空配置按预期在联网前拒绝发送；本地配置已确认被 Git 忽略；`git diff --check` 通过。
+- 遗留：需要用户在本地配置中填写 Webhook 和 `SEC` 加签密钥并完成手机实机发送；当前尚未接入图片或实时检测业务。
+
+## 2026-07-25 19:45 - 建立模型精度验证基线
+
+- 任务：为识别精度提升建立固定、可重复、可量化的验证入口。
+- 改动：新增 `tools/evaluate_model.py`，检查 YOLO 图片与标注完整性并输出总体及逐类别 Precision、Recall、F1、mAP50、mAP50-95；新增 `evaluation/` 数据集结构、当前模型 10 类配置和标注评估说明；更新 `.gitignore` 排除本地验证图片、标签、缓存和评估产物。
+- 验证：脚本语法检查通过；数据集类别顺序与 `models/best.pt` 完全一致；空验证集保护按预期拒绝评估；使用临时图片和标注完成一次 CPU 端到端 `model.val()`，成功生成 `metrics.json` 和 Ultralytics 图表，随后已清理临时数据及产物；`git diff --check` 通过。
+- 遗留：尚需收集并人工标注约 50-200 张真实现场图片，才能产出可信的当前模型基线指标并开始对比优化。
+
 ## 2026-07-25 19:21 - 补记运行环境与启动链路修复
 
 - 任务：复用电脑已有 Torch/CUDA 环境，修复 Windows 双击启动，并处理 Streamlit 图片参数弃用警告。

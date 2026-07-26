@@ -54,3 +54,5 @@ Thumbs.db
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+tools/annotate.log
+evaluation/datasets/ppe/labels/val/.annotate_progress.json

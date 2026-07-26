@@ -1,8 +1,37 @@
-# 项目共享日志
+﻿# 项目共享日志
 
+
+## 2026-07-26 23:30 - 彻底修复标注工具 SAVE 嵌套 UI 与无法保存问题
+
+- 任务：修复 window.parent.location 方案在 Streamlit 1.60 sandbox iframe 下失效，SAVE 完全无法触达服务器。
+- 改动：改回 iframe 自导航（window.location.replace），追加 _from_component=1 标志；Python 端在 query param 处理顶部新增 _from_component 分支，检测到标志后直接保存标签并输出轻量 escape 页面（st.markdown + st.stop()），再通过 window.top.location 刷新父窗口。原常规 query param 处理保留不变。
+- 验证：Python 编译通过；JS 侧两处导航均含 &_from_component=1。
+- 遗留：需重启 un_annotate.bat 后验证 SAVE 保存并正确返回当前图片。
+
+## 2026-07-26 23:15 - 修复标注工具 SAVE 后嵌套 UI 问题
+
+- 任务：点击 SAVE 后整个 Streamlit 页面加载到 iframe 内部，修复 JS 导航未指向父窗口的问题。
+- 改动：	ools/annotate.py 中 doSave() 的 window.location.replace 和 doSkip() 的 window.location.href 均改为 window.parent.location.*；清理 __pycache__ 过期字节码。
+- 验证：正则确认旧 window.location. 模式已全部替换为 window.parent.location.。
+- 遗留：需用户重启 un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
 
-## 2026-07-26 21:00 - 修正 _send_realtime_violations 调用缩进
+
+## 2026-07-26 22:46 - 替换标注工具：labelImg 弃用，改用 Streamlit 网页标注
+
+- 任务：labelImg 1.8.6 + PyQt5 5.15.11 存在 C++ 崩溃（按 W 键即 segfault），降级 PyQt5 导致 labelImg 无法导入，改为浏览器端标注方案。
+- 改动：新增 `tools/annotate.py`（基于 streamlit-drawable-canvas 的画框标注工具，支持多框累积、类别颜色叠加、进度记录、文件日志）；新增 `run_annotate.bat` 启动脚本（改用 `python -m streamlit` 调用以兼容 system-site-packages 布局）；删除废弃的 `run_labelImg.bat`；更新 `.gitignore` 排除日志和进度文件。
+- 验证：`annotate.py` 编译通过；日志记录在 `tools/annotate.log`；`streamlit-drawable-canvas` 导入正常。
+- 遗留：标注工具尚未被用户实际启动验证；启动后浏览器访问 http://localhost:8504 画框标注，完成后运行 `tools/evaluate_model.py` 生成基线指标。
+
+## 2026-07-26 22:26 - 方案B：建立从零标注的固定验证集
+
+- 任务：从素材库85张图片中筛选40张，建立从零人工标注的黄金真值验证集。
+- 改动：新增 `tools/setup_validation_set.py`，按分辨率分层抽样选取40张图片拷贝到 `evaluation/datasets/ppe/images/val/`，并创建空标签占位文件；安装 labelImg 1.8.6 到虚拟环境；新增 `run_labelImg.bat` 一键启动标注工具及 `predefined_classes.txt` 预置10类；更新 `evaluation/README.md` 标注流程和操作要点。
+- 验证：40张图片全部拷贝成功，图片与空标签一一对应；labelImg 导入可用；`evaluate_model.py --check-only` 通过格式检查（0 labeled objects 符合预期）。
+- 遗留：40张图片标签全部为空，需人工在 labelImg 中逐张画框；标注完成后运行 `tools/evaluate_model.py` 即生成可信的真值基线指标。
+
+-07-26 21:00 - 修正 _send_realtime_violations 调用缩进
 
 - 任务：另一个对话在"修复通知调用位置"时将调用补回,但缩进仍在 `if to_record:` 块外(12 dots,与 if 同级),同样会触发 UnboundLocalError。
 - 改动：将 `_send_realtime_violations(rt_stats, proj, insp)` 从 12 dots 改为 16 dots,使其正确位于 `if to_record:` 块内,与 `proj`/`insp` 赋值同级。同时清理日志中空标题行和重复孤儿条目。

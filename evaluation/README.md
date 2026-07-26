@@ -1,32 +1,55 @@
-# 模型精度验证基线
+﻿# 模型精度验证基线
 
-本目录用于建立固定、可重复的模型精度基线，不改变应用当前的检测行为。
+## 当前状态
 
-## 1. 准备验证集
+已从素材库中筛选 40 张图片放入 `images/val/`，空标签占位文件在 `labels/val/`。
+这些标签尚未标注，必须从零人工画框后才能用于精度评估。
 
-从真实使用场景中选取约 50-200 张有代表性的图片，优先覆盖远距离、小目标、遮挡、逆光、多人以及 `NO-Hardhat`、`NO-Safety Vest` 等关键隐患。验证集一旦用于模型对比，应保持固定；新收集的数据另行加入训练集或下一版验证集。
+## 方案 B：从零人工标注（当前流程）
 
-将图片放入：
+### 启动标注工具
 
-```text
-evaluation/datasets/ppe/images/val/
+双击 `run_labelImg.bat`，或在终端执行：
+
+```powershell
+.\.venv\Scripts\labelImg.exe evaluation\datasets\ppe\images\val evaluation\datasets\ppe\predefined_classes.txt
 ```
 
-使用 CVAT、Label Studio 或 labelImg 按 YOLO 检测格式标注，并将同名 `.txt` 文件放入：
+### labelImg 操作要点
 
-```text
-evaluation/datasets/ppe/labels/val/
+| 快捷键 | 功能 |
+|---|---|
+| `W` | 创建矩形框 |
+| `D` | 下一张图片 |
+| `A` | 上一张图片 |
+| `Ctrl+S` | 保存当前标注 |
+| `Del` | 删除选中框 |
+
+启动后在界面中：
+1. 点击左侧 **Open Dir**，选择 `evaluation/datasets/ppe/images/val/`
+2. 点击左侧 **Change Save Dir**，选择 `evaluation/datasets/ppe/labels/val/`
+3. 确认格式为 **YOLO**（底部状态栏显示）
+4. 标注完成后切换到下一张，labelImg 自动保存
+
+类别已预置在 `predefined_classes.txt`，与模型 10 类一致。
+
+### 标注规范
+
+- 框紧贴目标边缘，不画得太松
+- 仅框可见部分，被遮挡超过 50% 的目标跳过
+- 小于 10x10 像素的目标可不标
+- 即使图片中无任何目标，也保存空标签（labelImg 会在切换图片时自动保存）
+
+### 标注完成后的评估
+
+```powershell
+.\.venv\Scripts\python.exe tools\evaluate_model.py --check-only   # 检查格式
+.\.venv\Scripts\python.exe tools\evaluate_model.py                # 生成基线指标
 ```
 
-每行标注格式为：
+---
 
-```text
-class_id center_x center_y width height
-```
-
-后四项是相对图片宽高归一化到 `0-1` 的数值。即使图片中没有任何目标，也要创建同名空 `.txt` 文件，明确表示它是负样本。
-
-类别编号必须与当前 `models/best.pt` 一致：
+## 类别编号
 
 | ID | 类别 |
 |---:|---|
@@ -41,9 +64,7 @@ class_id center_x center_y width height
 | 8 | machinery |
 | 9 | vehicle |
 
-验证图片和标注属于本地数据，已被 `.gitignore` 排除，不会提交到仓库。
-
-## 2. 检查标注
+## 检查标注
 
 ```powershell
 .\.venv\Scripts\python.exe tools\evaluate_model.py --check-only
@@ -51,7 +72,7 @@ class_id center_x center_y width height
 
 工具会检查图片和标签是否一一对应、每行是否为 YOLO 格式、类别编号是否越界、坐标是否在 `0-1` 范围内。
 
-## 3. 运行基线评估
+## 运行基线评估
 
 ```powershell
 .\.venv\Scripts\python.exe tools\evaluate_model.py

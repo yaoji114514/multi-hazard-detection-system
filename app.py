@@ -33,6 +33,14 @@ from alert import AlertEngine
 from database import Database
 
 
+# 钉钉通知（配置缺失时不中断启动）
+try:
+    from dingtalk import DingTalkError, send_text
+    _HAS_DINGTALK = True
+except Exception:
+    _HAS_DINGTALK = False
+
+
 # ========== 实时检测全局统计 ==========
 # WebRTC 回调在独立线程执行,无 ScriptRunContext,不能访问 st.session_state
 #
@@ -46,6 +54,8 @@ ALERT_COOLDOWN = 10.0
 # 红色告警(任务#4): 检测到未戴安全帽时触发声音+弹窗+画面红边框
 RED_ALERT_COOLDOWN = 5.0   # 红色告警节流期(秒),避免连续轰击
 RED_ALERT_DISPLAY = 2.0    # 弹窗持续显示时长(秒)
+# 钉钉实时通知节流
+DINGTALK_REALTIME_COOLDOWN = 60.0
 # 目标跟踪去重(任务#11): track_id 去重 + 位置兜底(防 track 跳变误判)
 POS_DEDUPE_RADIUS = 80     # 位置兜底半径(像素,bbox 中心点距离)
 POS_DEDUPE_TIME = 30.0     # 位置兜底有效期(秒)
@@ -83,6 +93,9 @@ def get_rt_stats():
         "detect_interval": DETECT_INTERVAL_DEFAULT,  # 每 N 帧检测一次(UI 可调)
         "last_boxes": [],                # 缓存最近检测帧 boxes(供跳帧重画)
         "last_has_violation": False,     # 缓存最近检测帧是否含 no-helmet(跳帧画红边框用)
+        # --- 钉钉实时通知 ---
+        "dingtalk_last_send": 0.0,
+        "dingtalk_pending_counts": {},
     }
 
 
@@ -110,6 +123,8 @@ def _reset_rt_stats():
         rt["pos_dedupe"] = {}
         rt["last_boxes"] = []
         rt["last_has_violation"] = False
+        rt["dingtalk_last_send"] = 0.0
+        rt["dingtalk_pending_counts"] = {}
     # 锁外 release 旧 recorder(避免长持锁阻塞回调线程)
     if old_recorder is not None:
         try:
@@ -148,6 +163,75 @@ def _play_alert_sound():
             f'<audio autoplay><source src="data:audio/wav;base64,{audio_b64}" type="audio/wav"></audio>',
             unsafe_allow_html=True,
         )
+
+
+def _send_image_alert(alerts, record_id, image_path, project_name='', inspector=''):
+    """将有预警的图片检测结果发送到钉钉群。失败时仅记录不抛异常。"""
+    try:
+        level_icons = {'red': '红色预警', 'yellow': '黄色预警'}
+        highest = max(alerts, key=lambda a: {'red': 3, 'yellow': 2, 'blue': 1}.get(a['level'], 0))
+        type_counts = {}
+        for a in alerts:
+            t = a['hazard_type']
+            type_counts[t] = type_counts.get(t, 0) + 1
+        lines = [level_icons.get(highest['level'], '预警'), '']
+        if project_name:
+            lines.append('项目：' + project_name)
+        if inspector:
+            lines.append('检查人：' + inspector)
+        lines.append('时间：' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        lines.append('')
+        lines.append('隐患明细：')
+        for t, c in type_counts.items():
+            lines.append('  - ' + t + ' x ' + str(c))
+        lines.append('')
+        lines.append('处理建议：' + highest['action'])
+        lines.append('')
+        lines.append('本消息由多类隐患检测系统自动发送')
+        send_text('\n'.join(lines))
+    except Exception as e:
+        st.caption('钉钉通知发送失败: ' + str(e))
+
+
+def _send_realtime_violations(rt_stats, project_name="", inspector=""):
+    if not _HAS_DINGTALK:
+        return
+    try:
+        with rt_stats["lock"]:
+            now_ts = __import__("time").time()
+            pending = rt_stats.get("dingtalk_pending_counts", {})
+            last_send = rt_stats.get("dingtalk_last_send", 0)
+            should_send = (now_ts - last_send >= DINGTALK_REALTIME_COOLDOWN)
+            if should_send:
+                rt_stats["dingtalk_last_send"] = now_ts
+                send_counts = dict(pending)
+                pending.clear()
+        if not (should_send and send_counts):
+            return
+        highest = "yellow"
+        for vt in send_counts:
+            lvl = HazardDetector.ALERT_LEVELS.get(vt, ("blue",))[0]
+            if lvl == "red":
+                highest = "red"
+                break
+        cn_level = {"red": "红色预警", "yellow": "黄色预警"}
+        lines = [cn_level.get(highest, "预警") + " - 实时检测", ""]
+        if project_name:
+            lines.append("项目：" + project_name)
+        if inspector:
+            lines.append("检查人：" + inspector)
+        ts = __import__("datetime").datetime.now()
+        lines.append("时间：" + ts.strftime("%H:%M") + " (近60秒汇总)")
+        lines.append("")
+        lines.append("最近违规：")
+        for vt, cnt in send_counts.items():
+            cn = HazardDetector.LABEL_CN.get(vt, vt)
+            lines.append("  " + cn + " x " + str(cnt))
+        lines.append("")
+        lines.append("本消息由多类隐患检测系统自动发送（60s 汇总）")
+        send_text("\n".join(lines))
+    except Exception:
+        pass
 
 
 def _draw_boxes(img, boxes, detector):
@@ -283,6 +367,14 @@ if page == "📷 隐患检测":
                 project_name=project_name,
                 inspector=inspector
             )
+
+            # 发送钉钉预警（仅红色/黄色预警且未通知过）
+            if _HAS_DINGTALK and alerts:
+                if '_notified_rids' not in st.session_state:
+                    st.session_state['_notified_rids'] = set()
+                if record_id not in st.session_state['_notified_rids']:
+                    st.session_state['_notified_rids'].add(record_id)
+                    _send_image_alert(alerts, record_id, image_path, project_name, inspector)
 
         # 显示检测结果
         with col2:
@@ -579,6 +671,7 @@ elif page == "🎥 实时检测":
                         pos_list.append((cx, cy, now + POS_DEDUPE_TIME))
                         level = detector.ALERT_LEVELS.get(vtype, ("blue",))[0]
                         to_record.append((vtype, 1, level))
+                        rt_stats["dingtalk_pending_counts"][vtype] = rt_stats["dingtalk_pending_counts"].get(vtype, 0) + 1
                         # 红色告警(任务#4): no-helmet 节流触发
                         if vtype == "no-helmet" and now - rt_stats.get("red_alert_time", 0) >= RED_ALERT_COOLDOWN:
                             rt_stats["red_alert_time"] = now

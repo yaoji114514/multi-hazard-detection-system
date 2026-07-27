@@ -1,6 +1,19 @@
 ﻿# 项目共享日志
 
 
+## 2026-07-27 18:00 - 对话迁移：提交全部改动，交接至新对话
+
+- 任务：本对话上下文即将耗尽（258K），提交所有已完成的代码改动，为新对话提供干净的交接状态。
+- 改动：
+  - 标注工具：tools/annotate_server.py（独立HTTP服务，含缩放/平移/导出功能）
+  - 便携打包：portable/ppe-annotator/（PyInstaller exe，零依赖双击运行）
+  - 训练数据工具：build_training_dataset.py、merge_hf_datasets.py、prelabel_val.py
+  - 素材采集脚本：new_candidates/scripts/ 下多个搜索/下载/格式转换脚本
+  - 配置更新：run_annotate.bat、evaluation/datasets/ppe/data.yaml
+  - 标签清理：new_candidates/annotated/labels/ 删除无用标签，修正格式不一致的标签
+- 验证：git status 确认所有源码级改动已暂存；数据/模型/构建产物不入库。
+- 遗留：整个提升模型精度的工作，移交新对话继续。
+
 ## 2026-07-27 16:30 - v4模型：修复NO-Mask回归，mAP50升至0.857
 
 - 任务：v3模型NO-Mask暴跌（0.677→0.260），根因是AndrewMVD人脸裁剪集的NO-Mask标注风格与工地场景不匹配。剥离AndrewMVD的NO-Mask标签（806个），合并eval train（40张）+非val候选集（103张）的域内标签。
@@ -32,6 +45,38 @@ ew_candidates/annotated/ 合并103张到训练集。
 - 验证：evaluate_model.py 在黄金集上产出逐类指标；新模型文件 models/ppe_v3.pt。
 - 遗留：NO-Mask 精度倒退需排查（AndrewMVD 标注风格 vs 验证集标注风格）；Mask/vehicle 待验证集补充实例后评估；训练配置（mosaic=0）非最优，后续环境稳定后可用完整增强重训。
 
+
+## 2026-07-27 17:30 - 拆分训练集：全人工标注 2,656 张 + 待复核 117 张
+
+- 任务：将 117 张纯自动标注（未经人工复核）的图片从训练集移出，单独放入复核队列。
+- 改动：
+  - 训练集移除 117 张未复核的 site_ 图片，仅保留 26 张已人工复核的
+  - 新建 data/material_library/review_queue/ 存放 117 张待复核图
+  - 修复 	ools/build_training_dataset.py 遗漏 HF 数据集的问题，现包含全部人工标注源
+- 验证：
+  - 当前训练集 2,656 张 / 9,538 标注，全部为人工标注
+  - 复核队列 117 张独立存放，可后续复核
+- 遗留：
+  - 117 张复核队列待另一个对话标注后合入训练集
+  - 可开始训练：yolo train model=models/best.pt data=data/training_dataset/data.yaml epochs=100 imgsz=640
+
+## 2026-07-27 17:00 - HuggingFace 已标注数据集合并完成，全类覆盖
+
+- 任务：从 HuggingFace 下载人工标注的数据集，补全 Safety Cone、machinery、vehicle 三类数据缺口。
+- 改动：
+  - 从 HF 下载 keremberke/construction-safety-object-detection（33 张，含 hardhat/dump truck/wheel loader/no-hardhat 等）
+  - 从 HF 下载 keremberke/excavator-detector（143 张，含 excavators/dump truck/wheel loader）
+  - 新增 	ools/merge_hf_datasets.py COCO 转 YOLO 合并脚本
+  - 全部数据整合到 data/training_dataset/（2,916 张 / 10,488 个标注）
+- 验证：
+  - Safety Cone: 2 → 24（↑12x，人工标注）
+  - machinery: 41 → 209（↑5x，HF excavator 数据集）
+  - vehicle: 4 → 147（↑37x，HF 自卸车/挖掘机数据集）
+  - Mask 保持 3,366 实例，NO-Mask 966 实例
+  - 10 个类别全部有 ≥24 实例
+- 遗留：
+  - 现在可重训：yolo train model=models/best.pt data=data/training_dataset/data.yaml epochs=100 imgsz=640
+  - 训练完成后用 	ools/evaluate_model.py 对比精度
 
 ## 2026-07-27 16:00 - 补充 Safety Cone/machinery/vehicle 并合并人工复核标注
 
@@ -80,6 +125,19 @@ ew_candidates/annotated/
 - 请求：需另一个对话从网上下载补充 Safety Cone、vehicle、machinery 等冷门类别的图片，扩充到素材库 data/material_library/new_candidates/。
 - 验证：盘点数据与 PROJECT_LOG 历史记录一致。
 - 遗留：新图片到位后，需人工复核 → 合并全部训练集 → 本地重新训练 10 类模型 → 评估精度提升。
+
+## 2026-07-27 14:00 - 标注工具通用化、零依赖打包、一键导出
+
+- 任务：(1) 标注工具硬编码数据集路径，每换一批图就得改代码；(2) 发给别人用时需要装 Python 和依赖；(3) 标注完成后没有打包回传机制。
+- 改动：
+  - `tools/annotate_server.py`：移除 PIL 依赖，改为纯 Python 标准库；CLI 改为 `python annotate_server.py <图片目录> --port 8504`，标签自动解析同名 labels 目录。
+  - 新增缩放/平移：滚轮缩放、Ctrl+拖拽平移、1:1 复位按钮。
+  - 新增导出：全部标注完成后工具栏出现 Export 按钮，点击下载 `ppe_annotated.zip`（images + labels + 进度文件）。
+  - PyInstaller 打包为 `ppe-annotator.exe`（8.7MB），修复 `__file__` 路径和 FileHandler 兼容性问题。
+  - 新建 `portable/ppe-annotator/` 便携包，含 exe + run.bat，拷到任意 Windows 电脑双击即用，零依赖。
+  - 更新 `run_annotate.bat` 支持数据集参数。
+- 验证：exe 启动成功，API 正常返回 HTML 和 JSON；导出端点返回 200；系统 Python 直接运行通过（零 import 错误）。
+- 遗留：85 张素材图无需复核（40 张验证集为子集），等待新图片到后喂入标注工具。
 
 ## 2026-07-27 13:40 - 验证集复标完成，合并为训练集，模型评估基线建立
 

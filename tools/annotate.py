@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """YOLO annotation tool using native HTML5 Canvas."""
 from __future__ import annotations
 
@@ -45,42 +45,6 @@ params = st.query_params
 saved_data = params.get("data", None)
 restore_idx = params.get("idx", None)
 
-# ---- Handle requests from component iframe (save/skip with _from_component flag) ----
-_from_component = params.get("_from_component", None)
-if _from_component:
-    if saved_data:
-        try:
-            decoded = urllib.parse.unquote(saved_data)
-            boxes = json.loads(decoded)
-            target_stem = params.get("stem", "")
-            new_objs = [{"class": int(b[0]), "coords": [float(b[1]), float(b[2]), float(b[3]), float(b[4])]} for b in boxes]
-            save_labels(target_stem, new_objs)
-            progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8")) if PROGRESS_FILE.exists() else {}
-            progress[target_stem] = {"done": True, "count": len(new_objs)}
-            PROGRESS_FILE.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info("Saved %d boxes for %s via component", len(new_objs), target_stem)
-            if restore_idx:
-                try: st.session_state.idx = int(restore_idx)
-                except: pass
-        except Exception as e:
-            logger.error("Component save failed: %s", traceback.format_exc())
-    elif params.get("clear", None):
-        clear_stem = params.get("clear", "")
-        save_labels(clear_stem, [])
-        progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8")) if PROGRESS_FILE.exists() else {}
-        progress[clear_stem] = {"done": True, "count": 0}
-        PROGRESS_FILE.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("Cleared %s via component", clear_stem)
-    elif params.get("skip", None):
-        skip_stem = params.get("skip", "")
-        progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8")) if PROGRESS_FILE.exists() else {}
-        existing = load_labels(skip_stem)
-        progress[skip_stem] = {"done": True, "count": len(existing)}
-        PROGRESS_FILE.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("Skipped %s via component", skip_stem)
-    st.query_params.clear()
-    st.markdown("""<!DOCTYPE html><html><body style="background:#1e1e1e;color:#e0e0e0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><p style="font-size:18px;margin:0 0 16px">Saved</p><a href="/" target="_parent" style="color:#4caf50;font-size:14px;text-decoration:none;border:1px solid #4caf50;padding:8px 20px;border-radius:4px">Continue</a></div><script>try{window.top.location.href=window.top.location.origin+window.top.location.pathname;}catch(e){}</script></body></html>""", unsafe_allow_html=True)
-    st.stop()
 if saved_data:
     try:
         decoded = urllib.parse.unquote(saved_data)
@@ -91,8 +55,7 @@ if saved_data:
         progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8")) if PROGRESS_FILE.exists() else {}
         progress[target_stem] = {"done": True, "count": len(new_objs)}
         PROGRESS_FILE.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("Saved %d boxes for %s via query param", len(new_objs), target_stem)
-        # Clear params and reload
+        logger.info("Saved %d boxes for %s", len(new_objs), target_stem)
         st.query_params.clear()
         if restore_idx:
             try: st.session_state.idx = int(restore_idx)
@@ -182,6 +145,7 @@ button:hover{{background:#666}}
   <span>Class: <b>{CLASSES[cls_idx]}</b> ({cls_idx}) | Shift=square</span>
   <button onclick="undo()">Undo</button>
   <button class="btn-clear" onclick="clearAll()">Clear</button>
+  <button id="delBtn" onclick="toggleDeleteMode()" title="Toggle delete mode">Edit</button>
   <button class="btn-save" onclick="doSave()">SAVE</button>
   <button class="btn-skip" onclick="doSkip()">Skip</button>
   <span id="status"></span>
@@ -197,6 +161,7 @@ const IW={iw},IH={ih};
 const STEM="{stem}";
 const BASE=window.location.origin+window.location.pathname;
 let clsId={cls_idx};window._CURRENT_IDX={idx};
+window._DELETE_MODE=false;
 let boxes=[];
 let drawing=null;
 
@@ -229,7 +194,18 @@ function draw(){{
 
 cv.onmousedown=e=>{{
     let r=cv.getBoundingClientRect(),sx=cv.width/r.width,sy=cv.height/r.height;
-    drawing={{x:(e.clientX-r.left)*sx,y:(e.clientY-r.top)*sy,w:0,h:0}};
+    let mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;
+    if(window._DELETE_MODE){{
+        // Delete mode: click to remove box
+        for(let i=boxes.length-1;i>=0;i--){{
+            let b=boxes[i];
+            if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){{
+                boxes.splice(i,1);draw();return;
+            }}
+        }}
+        return;
+    }}
+    drawing={{x:mx,y:my,w:0,h:0}};
 }};
 cv.onmousemove=e=>{{
     if(!drawing)return;
@@ -255,15 +231,31 @@ function boxesToYOLO(){{
     return boxes.map(b=>[b.cls,(b.x+b.w/2)/IW,(b.y+b.h/2)/IH,b.w/IW,b.h/IH]);
 }}
 
+function toggleDeleteMode(){{window._DELETE_MODE=!window._DELETE_MODE;let btn=document.getElementById('delBtn');if(window._DELETE_MODE){{btn.textContent='Delete';btn.style.background='#c62828';btn.style.color='#fff';cv.style.cursor='pointer';}}else{{btn.textContent='Edit';btn.style.background='#444';btn.style.color='#fff';cv.style.cursor='crosshair';}}}}
+
 function doSave(){{let idx=window._CURRENT_IDX||0;
     let data=encodeURIComponent(JSON.stringify(boxesToYOLO()));
-    window.location.replace(BASE+"?data="+data+"&stem="+STEM+"&idx="+idx+"&_from_component=1");
+    window.parent.postMessage({{type:'annotate_save',data:data,stem:STEM,idx:idx}},'*');
 }}
 
 function doSkip(){{
-    window.location.replace(BASE+"?skip="+STEM+"&_from_component=1");
+    window.parent.postMessage({{type:'annotate_skip',stem:STEM}},'*');
 }}
 </script></body></html>"""
+
+st.markdown("""
+<script>
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'annotate_save') {
+        window.location.href = window.location.origin + window.location.pathname + '?data=' + e.data.data + '&stem=' + e.data.stem + '&idx=' + e.data.idx;
+    }
+    else if (e.data && e.data.type === 'annotate_skip') {
+        window.location.href = window.location.origin + window.location.pathname + '?skip=' + e.data.stem;
+    }
+});
+</script>
+""", unsafe_allow_html=True)
+
 
 st.components.v1.html(html, height=display_h + 40, scrolling=False)
 

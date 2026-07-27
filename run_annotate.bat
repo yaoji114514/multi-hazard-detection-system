@@ -2,15 +2,19 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-set STREAMLIT_LOG_LEVEL=debug
+if "%~1"=="" (
+    set IMGDIR=evaluation\datasets\ppe\images\val
+) else (
+    set IMGDIR=%1
+)
 
-echo === PPE Annotation Tool ===
-echo Starting at %date% %time%
-echo Log: tools\annotate.log
-echo ============================
+echo === YOLO Annotation Tool ===
+echo Images: %IMGDIR%
+echo Open: http://localhost:8504
+echo ====================================
 echo.
 
-.venv\Scripts\python.exe -m streamlit run tools\annotate.py --server.port 8504 --server.headless true --logger.level debug 2>&1
+.venv\Scripts\python.exe tools\annotate_server.py %IMGDIR% --port 8504
 
 echo.
 echo === Stopped at %date% %time% ===

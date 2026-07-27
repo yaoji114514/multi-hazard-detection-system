@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil, xml.etree.ElementTree as ET, random, json
 from collections import Counter
+from sanitize_datasets import sanitize_dataset
 
 random.seed(42)
 
@@ -184,4 +185,5 @@ if __name__ == "__main__":
     n2 = convert_andrewmvd()
     n3 = add_candidates()
     n4 = add_hf_datasets()
+    sanitize_dataset(apply=True)
     validate()

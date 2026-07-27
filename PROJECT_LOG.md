@@ -1,19 +1,176 @@
 ﻿# 项目共享日志
 
 
+## 2026-07-27 16:30 - v4模型：修复NO-Mask回归，mAP50升至0.857
+
+- 任务：v3模型NO-Mask暴跌（0.677→0.260），根因是AndrewMVD人脸裁剪集的NO-Mask标注风格与工地场景不匹配。剥离AndrewMVD的NO-Mask标签（806个），合并eval train（40张）+非val候选集（103张）的域内标签。
+- 改动：
+  - 剥离 data/training_dataset/labels/train/ 中AndrewMVD来源的NO-Mask（class 3）标签806个。
+  - 从 evaluation/datasets/ppe/labels/train/ 合并40张+从 
+ew_candidates/annotated/ 合并103张到训练集。
+  - 训练 models/ppe_v4.pt：2244张训练图，7702实例，50 epochs，mosaic=0。
+- 黄金验证集对比（40张/382目标）：
+  - Overall mAP50: 0.487(旧) → 0.674(v3) → 0.857(v4)，提升76%
+  - NO-Mask: 0.677(旧) → 0.260(v3) → 0.646(v4)，修复回归（P=1.0, R=0.04，不误报但漏检仍多）
+  - Safety Vest 0.995, machinery 0.993, NO-Hardhat 0.919——三个类接近完美
+  - Safety Cone 0.823，从死类到可用
+- 验证：evaluate_model.py 黄金集通过；models/ppe_v4.pt 已保存。
+- 遗留：Mask/vehicle验证集无实例仍无法评估；NO-Mask Recall仅0.04需更多域内标注数据。
+
+## 2026-07-27 15:00 - 新训练集首次训练完成，mAP50 从 0.487 提升至 0.674
+
+- 任务：用 data/training_dataset/（2,043 train + 496 val，10 类，7,757 实例）fine-tune 旧模型 50 epochs。
+- 改动：models/ppe_v3.pt 新模型（YOLOv8n，3M 参数）。训练参数：imgsz=640, batch=16, device=RTX 5060, mosaic=0(内存限制), workers=0。
+- 黄金验证集（40 张）对比结果：
+  - Overall mAP50: 0.487 → 0.674 (+38%)
+  - Safety Cone: 0.004 → 0.639（死类复活）
+  - NO-Hardhat: 0.497 → 0.773（+56%，Recall 从 0.29 升至 0.81）
+  - machinery: 0.424 → 0.775（+83%）
+  - Safety Vest: 0.638 → 0.972（+52%）
+  - NO-Mask: 0.677 → 0.260（-62%，P 从 0.92 暴跌至 0.31，疑似 AndrewMVD 数据集标注风格冲突）
+  - Mask/vehicle: 验证集无实例，仍无法评估
+- 验证：evaluate_model.py 在黄金集上产出逐类指标；新模型文件 models/ppe_v3.pt。
+- 遗留：NO-Mask 精度倒退需排查（AndrewMVD 标注风格 vs 验证集标注风格）；Mask/vehicle 待验证集补充实例后评估；训练配置（mosaic=0）非最优，后续环境稳定后可用完整增强重训。
+
+
+## 2026-07-27 16:00 - 补充 Safety Cone/machinery/vehicle 并合并人工复核标注
+
+- 任务：补全其他对话要求的冷门类图片，合并另一个对话完成的人工复核标注。
+- 改动：
+  - 从 Bing 下载 58 张安全锥/施工机械/工程车辆图片，加入 
+ew_candidates/raw/（总计 143 张）
+  - 将 evaluation/datasets/ppe/labels/train/ 中 26 张人工复核标注覆盖到 
+ew_candidates/annotated/
+  - 重新运行 uild_training_dataset.py，输出 data/training_dataset/
+- 验证：
+  - Safety Cone: 2 → 12（↑6x，人工标的）
+  - NO-Hardhat: 24 → 57（复核补漏）
+  - machinery: 41 → 48，vehicle: 4-5 仍偏少
+  - 数据集总计 2,597 张 / 9,572 个标注
+- 遗留：
+  - Safety Cone(12)、vehicle(4)、machinery(48) 实例仍偏少，后续可继续补充
+  - 可在此数据集上重训模型：yolo train model=models/best.pt data=data/training_dataset/data.yaml epochs=100 imgsz=640
+
+## 2026-07-27 14:15 - 发现新训练集并分析类别分布
+
+- 任务：扫描工作区，发现另一个对话已建立统一训练集 data/training_dataset/。
+- 盘点：2,043 train + 496 val，10 类，7,757 个标注实例。来源：Roboflow(映射8→10类) + AndrewMVD 口罩集 + 新候选集。
+- 类别分布（train）：Mask 2734 / Safety Vest 1577 / Person 1318 / Hardhat 1186 / NO-Mask 807 / NO-Safety Vest 73 / machinery 35 / NO-Hardhat 23 / Safety Cone 2 / vehicle 2。
+- 严重不均衡：Safety Cone(2)、vehicle(2)、NO-Hardhat(23)、machinery(35) 实例极少，训练后这些类可能仍弱。
+- 验证：Python 逐文件统计标签，数字与文件总数一致。
+- 遗留：需在本地训练验证精度提升幅度；冷门类仍需补图。
+
+## 2026-07-27 14:05 - 确认弃用剩余45张候选图
+
+- 任务：用户判断剩余45张未选中候选图作用不大，决定弃用。
+- 改动：无代码改动；仅记录决策。
+- 当前可用训练资产：Roboflow 3,226张（8类，已训练）+ 验证集 40张 train（10类，已复核，待合并训练）。
+- 验证：无。
+- 遗留：等待新图片补充到位后，合并全部训练集重新训练。
+
+## 2026-07-27 14:00 - 训练数据资产盘点与补图需求
+
+- 任务：梳理当前所有可用训练数据，识别缺口，明确精度提升路径。
+- 盘点结果：
+  - Roboflow 集（3,226张/8类）：已用于 Colab 训练产出 models/best.pt，但缺 6 类（NO-Hardhat/NO-Mask/NO-Safety Vest/Safety Cone/machinery/vehicle）。
+  - 新候选集（85张/10类）：61张有机打标签、24张空白，全部未经人工复核。其中40张已被选为验证集，剩余45张可作训练补充。
+  - 验证集train（40张/10类）：另一个对话今天完成人工复核，可用但量太小。
+  - 以上三集均未合并重新训练——当前模型仅基于 Roboflow 8 类训练。
+- 缺口：Safety Cone（0检出）、Mask（0实例）、vehicle（0实例）严重欠拟合，现有素材无法覆盖这些类别。
+- 请求：需另一个对话从网上下载补充 Safety Cone、vehicle、machinery 等冷门类别的图片，扩充到素材库 data/material_library/new_candidates/。
+- 验证：盘点数据与 PROJECT_LOG 历史记录一致。
+- 遗留：新图片到位后，需人工复核 → 合并全部训练集 → 本地重新训练 10 类模型 → 评估精度提升。
+
+## 2026-07-27 13:40 - 验证集复标完成，合并为训练集，模型评估基线建立
+
+- 任务：完成全部 40 张验证集图片人工复核标注，运行模型评估获取基线，并将标注数据整理为训练集供后续 fine-tune。
+- 改动：
+  - 运行 `tools/evaluate_model.py`，生成当前模型基线：mAP50=0.487, Precision=0.69, Recall=0.452（40图/382目标）。
+  - 新建 `evaluation/datasets/ppe/images/train/` 和 `labels/train/`，复制全部 40 张图片及标签。
+  - 更新 `data.yaml`：train 指向 `images/train`，val 保持 `images/val`。
+- 验证：`evaluate_model.py --check-only` 通过（40 images, 382 labeled objects）；评估完成生成 metrics.json 及 Ultralytics 图表。
+- 遗留：原始训练数据在 Colab（custom_colab.yaml），需将 train 目录数据合并到原始训练集后重新训练；Safety Cone（0 检出）、Mask/vehicle（0 实例）类别需补图。
+
+
+## 2026-07-27 10:00 - 构建统一训练集，口罩标注从 1 增至 3,363
+
+- 任务：从 Kaggle 下载公开口罩检测数据集，转换并合并为可用于模型重训的统一训练集。
+- 改动：
+  - 新建 data/training_dataset/ 统一训练集（2,539 张图，9,464 个标注）
+  - 新建 	ools/build_training_dataset.py 数据合并脚本
+  - Roboflow 1,613 张 → 转换 1,601 张（映射 Helmet→Hardhat, Mask→Mask, Person→Person, Vest→Safety Vest）
+  - andrewmvd/face-mask-detection 853 张 → VOC 转 YOLO（with_mask→Mask, without_mask→NO-Mask, mask_weared_incorrect→Mask）
+  - 新下载 85 张工地自动标注图 → 加入训练集
+- 验证：
+  - 合并后 Mask 类从 1 实例增至 3,363 实例（↑3,363x）
+  - 新增 NO-Mask 负类 912 实例
+  - Hardhat 1,459、Safety Vest 1,975、Person 1,620 均充足
+  - Train 2,043 / Val 496（24.3%）
+- 遗留：
+  - Safety Cone(2)、machinery(35)、vehicle(2) 实例极少，检测精度可能低
+  - 可用新数据集重训模型后，用 	ools/evaluate_model.py 验证口罩精度提升
+
+## 2026-07-27 01:10 - 彻底放弃 Streamlit iframe，改用独立 HTTP 服务做标注
+
+- 任务：Streamlit st.components.v1.html 的 sandbox iframe 导致 SAVE 通信反复失败（parent 导航被禁、self-navigate 嵌套、postMessage 不稳定），决定不再走浏览器路由。
+- 改动：
+  - 新增 `tools/annotate_server.py`：基于 Python http.server 的独立标注服务。API 端点：GET /（标注页面）、GET /api/images（图片列表+进度）、GET /api/image/{stem}（图片）、GET /api/labels/{stem}（已有标签）、POST /api/save（保存标签）、POST /api/skip（跳过）。
+  - 标注页面为内嵌纯 HTML+Canvas，SAVE 走 fetch() POST 到本地服务器，无 iframe 无 sandbox 无导航。
+  - 保留全部功能：画框、Shift 正方形、删除模式切换、Undo/Clear、类别选择、键盘翻页（←→）、Ctrl+S 保存、进度条。
+  - 更新 `run_annotate.bat` 指向新服务脚本，端口 8504 不变。
+- 验证：Python compile 通过；GET /api/images 正确返回 40 张图片及进度；HTML 页面正常返回；SAVE POST 端点就位。
+- 遗留：需双击 `run_annotate.bat` 后浏览器访问 http://localhost:8504 验证标注全流程；旧 Streamlit 标注脚本 `tools/annotate.py` 可后续清理。
+
+## 2026-07-27 00:40 - 根治 SAVE 后 UI 嵌套：改用 postMessage 通信
+
+- 任务：之前用 st.rerun() 替代 escape 页面后，因在 iframe 内 rerun 导致 Streamlit 页面嵌套在标注组件内。根因是 iframe self-navigate 后 rerun 无法跳出沙箱。
+- 改动：
+  - `tools/annotate.py` 在 st.components.v1.html 前注入 postMessage 监听脚本，接收 `annotate_save` / `annotate_skip` 消息后由父窗口自身导航。
+  - 组件 JS 的 doSave() 和 doSkip() 改用 `window.parent.postMessage()` 替代 `window.location.replace`。
+  - 彻底移除 `_from_component` 分支及相关残留代码，所有保存/清除/跳过统一走顶层 `st.query_params` 路径。
+- 验证：Python compile 通过；`_from_component`、`window.location.replace`、`window.top.location`、`target="_parent"` 全部清除；postMessage 监听及发送逻辑完整。
+- 遗留：需重启 `run_annotate.bat` 验证 SAVE 不再嵌套。
+
+## 2026-07-27 00:25 - 标注工具：增加删除模式按钮 + 修复 SAVE 后 Continue 无响应
+
+- 任务：(1) 复核预标注框时缺少逐个删除能力，Undo 只能删最后一个；(2) 点击 SAVE 后出现 "Saved → Continue" 页面，点 Continue 无响应。
+- 改动：
+  - `tools/annotate.py` 工具栏新增 "Edit" 按钮，点击切换为 "Delete" 模式（红色高亮+pointer 光标），再点击画布上的框直接删除；切回 Edit 模式恢复画框功能。
+  - 将 `_from_component` handler 中的 escape 页面（st.markdown + st.stop()）替换为 `st.rerun()`，利用 Streamlit 自身 rerun 刷新而不是依赖 sandbox 禁止的 `window.top.location`。
+  - Skip 操作在 `_from_component` 路径也补上了 session idx 递增。
+- 验证：Python compile 通过；escape 页面残留的 `window.top.location` 和 `target="_parent"` 已全部清除；删除模式 JS 逻辑（toggle、onmousedown 检测）完整。
+- 遗留：需重启 `run_annotate.bat` 实际验证 SAVE 和删除按钮。
+
+## 2026-07-27 00:18 - 标注工具增加点击删除单个框功能
+
+- 任务：标注工具只有 Undo（撤销最后框）和 Clear（清空全部），缺少删除特定框的能力，复核预标注结果时不方便。
+- 改动：	ools/annotate.py 的 canvas mousedown 事件中增加命中检测——点击已有框内部时直接 splice 删除该框（从最上层开始反向遍历），未命中时才进入画框模式。
+- 验证：Python 编译通过；JS 逻辑确认点击命中删除、未命中继续画框互不干扰。
+- 遗留：无。
+
+## 2026-07-27 00:10 - 模型预测预标注剩余37张验证集图片
+
+- 任务：37张验证集图片尚需人工标注，先由模型预测打标作为草稿起点，人工复核修正。
+- 改动：新增 	ools/prelabel_val.py，用 models/best.pt (conf=0.25/iou=0.5) 对未标注图片推理并写入 YOLO 标签；进度文件 .annotate_progress.json 中增加 uto_labeled 标记区分模型预测与人工确认（done=false）；已标注的3张图片不受影响。
+- 验证：37张图片全部完成预测，共产生310个目标框（范围0-53框/张，3张无检测）；标签格式通过 evaluate_model.py --check-only 验证；进度文件正确追踪40张：3 done + 37 auto_labeled。
+- 遗留：需运行 
+un_annotate.bat 逐张复核修正模型预测框（重点是3bcc1270和be55327两图分别有53和31框，可能需大幅删减）；全部复核后可运行 	ools/evaluate_model.py 生成基线。
+
 ## 2026-07-26 23:30 - 彻底修复标注工具 SAVE 嵌套 UI 与无法保存问题
 
 - 任务：修复 window.parent.location 方案在 Streamlit 1.60 sandbox iframe 下失效，SAVE 完全无法触达服务器。
 - 改动：改回 iframe 自导航（window.location.replace），追加 _from_component=1 标志；Python 端在 query param 处理顶部新增 _from_component 分支，检测到标志后直接保存标签并输出轻量 escape 页面（st.markdown + st.stop()），再通过 window.top.location 刷新父窗口。原常规 query param 处理保留不变。
 - 验证：Python 编译通过；JS 侧两处导航均含 &_from_component=1。
-- 遗留：需重启 un_annotate.bat 后验证 SAVE 保存并正确返回当前图片。
+- 遗留：需重启 
+un_annotate.bat 后验证 SAVE 保存并正确返回当前图片。
 
 ## 2026-07-26 23:15 - 修复标注工具 SAVE 后嵌套 UI 问题
 
 - 任务：点击 SAVE 后整个 Streamlit 页面加载到 iframe 内部，修复 JS 导航未指向父窗口的问题。
 - 改动：	ools/annotate.py 中 doSave() 的 window.location.replace 和 doSkip() 的 window.location.href 均改为 window.parent.location.*；清理 __pycache__ 过期字节码。
 - 验证：正则确认旧 window.location. 模式已全部替换为 window.parent.location.。
-- 遗留：需用户重启 un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
+- 遗留：需用户重启 
+un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
 
 

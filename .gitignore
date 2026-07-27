@@ -20,8 +20,27 @@ data/material_library/partner_review/inventory.json
 data/material_library/partner_review/labels/
 data/material_library/partner_review/images/
 data/material_library/partner_images/
+data/material_library/hf_datasets/
+data/material_library/hf_extracted/
+data/material_library/missing_classes/
+data/material_library/new_domain/
+data/material_library/review_queue*/
+
+# ===== ?????????????????????=====
+data/training_dataset/images/
+data/training_dataset/labels/
+/runs/
+/yolo*.pt
+
+# ===== ??????????????????=====
+/build/
+/portable/
 
 # ===== 本地验证集与评估产物（结构保留，数据不入库）=====
+evaluation/datasets/ppe/images/train/
+evaluation/datasets/ppe/images/review/
+evaluation/datasets/ppe/labels/train/
+evaluation/datasets/ppe/labels/review/
 evaluation/datasets/ppe/images/val/*
 !evaluation/datasets/ppe/images/val/.gitkeep
 evaluation/datasets/ppe/labels/val/*

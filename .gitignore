@@ -1,4 +1,4 @@
-# ===== 虚拟环境（由 setup.bat 重建）=====
+﻿# ===== 虚拟环境（由 setup.bat 重建）=====
 .venv/
 
 # ===== 运行时数据（自动生成，不入版本库）=====
@@ -16,6 +16,10 @@ data/material_library/raw/
 data/material_library/new_candidates/raw/
 data/material_library/new_candidates/annotated/*.jpg
 data/material_library/new_candidates/annotated/images/
+data/material_library/partner_review/inventory.json
+data/material_library/partner_review/labels/
+data/material_library/partner_review/images/
+data/material_library/partner_images/
 
 # ===== 本地验证集与评估产物（结构保留，数据不入库）=====
 evaluation/datasets/ppe/images/val/*

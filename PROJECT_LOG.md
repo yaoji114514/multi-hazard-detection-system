@@ -1,6 +1,31 @@
 ﻿# 项目共享日志
 
 
+## 2026-07-27 18:00 - v5模型训练中：合并新素材库数据，训练集扩至5000+张
+
+- 任务：合并其他对话下载的HF数据集到训练集，重新训练提升精度。
+- 改动：
+  - 新合并数据源：
+    - ppe_vincent (Roboflow): 1822张，5类→映射为Hardhat/NO-Hardhat/NO-SafetyVest/Person/SafetyVest，+12,138标注
+    - hardhat FiftyOne: 868张，"helmet"→Hardhat，+3,630标注
+    - construction_safety (COCO): 33张，17类→映射10类，+71标注
+    - excavator (COCO): 143张，excavators/dump truck/wheel loader→machinery/vehicle，+238标注
+  - 训练集增长：2160张 → ~5000张，7831标注 → ~24000标注
+  - 类分布严重不平衡：Hardhat 1207→8485(+7x)，NO-Mask仍675(几乎不变)
+  - 训练 models/ppe_v5.pt (based on v4, 4883 images, 100 epochs, RTX 5060)
+- 验证（黄金40张集，epoch 25时）：
+  - Overall mAP50: 0.569（比v4的0.857大幅下降，原因：类不平衡+训练未收敛）
+  - 内部验证集mAP50: 0.928（说明模型在学习，但泛化到黄金集困难）
+  - NO-Mask: 0.192（最差，P=0.746 R=0.05）
+  - Safety Vest: 0.813（最好但仍低于v4的0.995）
+- 遗留：
+  - v5训练正在继续（26/100 epochs），需等待完成后再评估
+  - 类不平衡是关键问题：Hardhat 8485个标注压倒其他类
+  - 后续策略：下采样Hardhat数据 或 使用类别权重重训
+  - traffic_cone (17GB) 未解压，可用于补充Safety Cone数据
+  - 117张复核队列仍待标注（review_queue/）
+  - 核心难点NO-Mask Recall仍极低(0.05)，急需高质量工地场景NO-Mask数据
+
 ## 2026-07-27 18:00 - 对话迁移：提交全部改动，交接至新对话
 
 - 任务：本对话上下文即将耗尽（258K），提交所有已完成的代码改动，为新对话提供干净的交接状态。

@@ -276,10 +276,13 @@ st.markdown(
 
 # ========== 初始化 ==========
 @st.cache_resource
-def get_detector():
-    """初始化检测器(缓存避免重复加载模型)"""
-    # 默认加载 models/best.pt (PPE多类检测模型,含安全帽/反光衣/口罩等10类)
-    return HazardDetector()
+def get_detector(model_path):
+    """Cache a detector by its resolved model path."""
+    return HazardDetector(model_path)
+
+
+def get_current_detector():
+    return get_detector(str(HazardDetector.resolve_model_path()))
 
 
 @st.cache_resource
@@ -302,6 +305,11 @@ inspector = st.sidebar.text_input("检查人", value="")
 
 # 导航
 page = st.sidebar.radio("功能导航", ["📷 隐患检测", "🎥 实时检测", "🎬 视频检测", "📋 检测记录", "📊 统计分析"])
+
+active_detector = get_current_detector()
+st.sidebar.caption(f"Current model: {active_detector.model_version}")
+if active_detector.fallback_used:
+    st.sidebar.warning(f"Model fallback enabled: {active_detector.fallback_reason}")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("五建(环科)公司 AI应用创新大赛参赛作品")
@@ -352,7 +360,7 @@ if page == "📷 隐患检测":
 
         # 执行检测
         with st.spinner("正在检测..."):
-            detector = get_detector()
+            detector = get_current_detector()
             result = detector.detect(str(image_path))
 
             alert_engine = get_alert_engine()
@@ -365,7 +373,8 @@ if page == "📷 隐患检测":
                 result,
                 image_name=uploaded_file.name,
                 project_name=project_name,
-                inspector=inspector
+                inspector=inspector,
+                model_version=detector.model_version,
             )
 
             # 发送钉钉预警（仅红色/黄色预警且未通知过）
@@ -446,7 +455,7 @@ elif page == "📋 检测记录":
         records = db.get_recent_records(limit=50)
         if records:
             df = pd.DataFrame(records)
-            display_cols = ["timestamp", "project_name", "inspector", "image_name",
+            display_cols = ["timestamp", "project_name", "inspector", "model_version", "image_name",
                             "total_detections", "no_helmet_count", "no_vest_count",
                             "red_alerts", "yellow_alerts", "has_violation"]
             display_names = {
@@ -461,6 +470,7 @@ elif page == "📋 检测记录":
                 "yellow_alerts": "黄色",
                 "has_violation": "是否有违规",
             }
+            display_names["model_version"] = "Model version"
             df_display = df[display_cols].rename(columns=display_names)
             df_display["是否有违规"] = df_display["是否有违规"].map({0: "否", 1: "是"})
 
@@ -493,6 +503,7 @@ elif page == "📋 检测记录":
                 "检查人": rt_df["inspector"],
                 "截图": rt_df["snapshot_path"].replace("", "—"),
             })
+            rt_display.insert(6, "Model version", rt_df["model_version"])
             st.dataframe(rt_display, use_container_width=True, hide_index=True)
             st.caption(f"共 {len(rt_records)} 条实时违规记录(每 {int(ALERT_COOLDOWN)}s 节流去重入库)")
             # 任务#5: 显示最近一张违规抓拍
@@ -580,7 +591,7 @@ elif page == "🎥 实时检测":
                 st.rerun()
 
     # ----- 检测器与设备 -----
-    detector = get_detector()
+    detector = get_current_detector()
     device = 0 if torch.cuda.is_available() else "cpu"
 
     # ----- 获取跨 rerun 持久化的统计对象(st.cache_resource 确保全局唯一) -----
@@ -696,6 +707,7 @@ elif page == "🎥 实时检测":
                             violation_type=vtype, violation_count=vcount,
                             level=vlevel, snapshot_path=str(snap_path),
                             project_name=proj, inspector=insp,
+                            model_version=detector.model_version,
                         )
                         with rt_stats["lock"]:
                             rt_stats["realtime_record_count"] += 1
@@ -822,7 +834,7 @@ elif page == "🎬 视频检测":
 
         st.info(f"视频已上传:{uploaded_video.name},正在逐帧检测...")
 
-        detector = get_detector()
+        detector = get_current_detector()
         device = 0 if torch.cuda.is_available() else "cpu"
         cap = cv2.VideoCapture(str(video_path))
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25

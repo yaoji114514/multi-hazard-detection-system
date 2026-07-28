@@ -1,5 +1,77 @@
 ﻿# 项目共享日志
 
+## 2026-07-28 15:38 - YOLO26m candidate reversible integration
+
+- Task: Complete the logged handoff: make the YOLO26m 5-epoch candidate selectable in the application without replacing the production `models/best.pt`.
+- Changes:
+  - Copied and SHA-256 verified `runs/yolo26/candidate_5ep/weights/best.pt` to ignored local file `models/yolo26m_5ep.pt`; added the exact ignore rule `/models/yolo26m_*.pt`.
+  - Added tracked `models/active_model.txt` with default `yolo26m_5ep.pt`. Editing it to `best.pt` performs the rollback.
+  - Updated `src/detector.py` to validate the fixed 10-class order, expose the actual `model_path`, `model_version`, `fallback_used`, and fall back to local `models/best.pt` on missing/load-invalid candidates (with explicit final COCO fallback only if PPE weights fail).
+  - Updated `app.py` cache keys to use the resolved model path, display the actually loaded model/fallback state in the sidebar, and persist the actual model version for image and realtime events.
+  - Updated `src/database.py` with an idempotent `PRAGMA table_info` migration for `model_version` in both tables; no database was deleted or rebuilt.
+- Verification:
+  - `py_compile app.py src/detector.py src/database.py`, `run.bat --check`, headless Streamlit startup plus `/_stcore/health` (HTTP 200), and `git diff --check` passed.
+  - Default candidate loads with the expected class order; direct image `detect()` and `track()` smoke tests on `data/sample_images/test_helmet.jpg` passed.
+  - Switching to `best.pt`, restoring the candidate, temporarily renaming the candidate to confirm automatic fallback, a temporary-DB write test, and migration checks of the existing database all passed.
+  - Production `models/best.pt` SHA-256 remains `2419700BBE3B8D38F9000655D9CF952A4BC93EF6C143BAF8B49A0ABDE5D0760F`.
+- Remaining: A user-operated webcam/video session is still needed to measure full-pipeline FPS/memory stability and validate real screenshot/DingTalk delivery; no runtime database, weights, screenshots, cache, or training output is staged for Git.
+
+
+## 2026-07-28 14:53 - 交接：将YOLO26m候选可回滚接入比赛软件
+
+- 任务：用户决定由下一个对话完成YOLO26m候选模型的实际软件接入；本条记录给出完整实施需求、产物位置、风险、验收门槛和回滚方案。本对话不修改业务代码、不覆盖现有生产权重。
+- 改动：本对话已完成YOLO26m预训练权重下载、1 epoch smoke test、4790/561张净化数据的5 epochs候选训练，以及候选与当前模型在同一40张黄金集上的复评。新增训练/评估产物均位于已忽略的 `runs/`、`evaluation/results/` 和根目录自动下载权重中；生产文件 `models/best.pt` 未改动。
+- 当前模型与候选产物：
+  - 生产模型：`models/best.pt`，YOLOv8n，6,250,090 bytes，SHA-256 `2419700BBE3B8D38F9000655D9CF952A4BC93EF6C143BAF8B49A0ABDE5D0760F`。
+  - 候选模型：`runs/yolo26/candidate_5ep/weights/best.pt`，YOLO26m，44,017,177 bytes，SHA-256 `0F842DE7702651DB50E5656AD126BCCEBECC4A15EAB35B629EF3F21381876EB2`。
+  - 候选类别顺序已确认与业务完全一致：`Hardhat, Mask, NO-Hardhat, NO-Mask, NO-Safety Vest, Person, Safety Cone, Safety Vest, machinery, vehicle`；任务为detect，模型为end-to-end输出。
+  - 候选普通验证集：Precision约0.81、Recall约0.78、mAP50=0.853、mAP50-95=0.561、GPU推理约7.7ms；batch=8峰值显存约4.83GB。
+  - 候选严格40张黄金集：Precision=0.459、Recall=0.292、mAP50=0.280、mAP50-95=0.128、推理约12.6ms。
+  - 当前YOLOv8n同黄金集：Precision=0.690、Recall=0.452、mAP50=0.487、mAP50-95=0.368、推理约3.2ms；但旧权重曾见过其中26张黄金图，只能作为带泄漏参考。
+- 下一个对话必须完成的最小实施：
+  1. 复制候选权重为本地 `models/yolo26m_5ep.pt`，但绝对不得覆盖、移动或删除 `models/best.pt`；大型二进制不得提交Git，必要时仅新增精确的 `.gitignore` 规则 `/models/yolo26m_*.pt`。
+  2. 新增一个小型可追踪选择文件 `models/active_model.txt`，默认内容为 `yolo26m_5ep.pt`；改回 `best.pt` 即完成回滚。不要引入新的配置框架或大范围重构。
+  3. 在 `src/detector.py` 集中实现模型解析：优先读取 `active_model.txt`，候选不存在/加载失败/类别顺序不符时自动回退 `models/best.pt`；现有最终COCO `yolov8n.pt` 回退可保留。为检测器记录 `model_path`、`model_version`、`fallback_used`，启动时输出清晰日志。
+  4. `app.py:278-282` 的 `st.cache_resource get_detector()` 当前无参数，且在约第355、583、825行被三个页面调用。必须让缓存键包含解析后的模型路径，或在切换后明确清理缓存；不能出现修改 `active_model.txt` 后仍继续使用旧模型而界面显示新模型的情况。
+  5. 在侧边栏或检测页显示当前实际加载的模型版本和是否发生回退；显示内容必须来自检测器实际状态，不能只读取配置文件。
+  6. 数据库目前没有模型版本字段。对 `detection_records` 和 `realtime_violations` 做幂等SQLite迁移（先用 `PRAGMA table_info` 检查，再按需 `ALTER TABLE ... ADD COLUMN model_version TEXT`）；图片检测记录和实时违规记录均写入实际 `model_version`。不得删除或重建现有运行数据库。
+  7. YOLO26为end-to-end模型，但现有图片检测 `detector.detect()`、实时 `track()`（app约611行）、视频推理（约848行）均通过Ultralytics API，原则上无需自写NMS或后处理；若修改后处理必须证明不会重复NMS或漏框。
+  8. 不允许在本次接入中继续训练、调阈值或替换类别映射；目标仅是可回滚接入和真实软件测试，保持改动最少。
+- 验收清单：
+  - 启动时默认实际加载YOLO26m，10类顺序断言通过，界面显示候选模型名称；`models/best.pt` SHA-256仍为上述原值。
+  - 上传图片检测、实时摄像头track、视频检测、违规截图、数据库保存和钉钉通知链路均能运行；至少记录一次图片检测和一次实时违规，并确认数据库model_version正确。
+  - RTX 5060上记录完整摄像头流程FPS和稳定显存，不只记录裸模型推理；暂定最低验收为完整流程≥25 FPS且无持续显存增长。
+  - 将 `active_model.txt` 改为 `best.pt` 并重启后必须真实加载YOLOv8n；再改回候选也必须生效。
+  - 临时将候选文件改名或设置无效名称，系统必须自动回退YOLOv8n并在界面/日志明确提示，不能静默使用COCO模型。
+  - 运行Python编译、关键检测smoke test和 `git diff --check`；不提交运行数据库、权重、截图、缓存或训练产物。
+- 验证：本交接前已确认模型统一入口为 `src/detector.py:42-57`，`app.py` 三类检测流程共用同一HazardDetector；候选权重可加载，类别/任务/end-to-end属性正确；训练与两套评估报告分别位于 `runs/yolo26/candidate_5ep/`、`evaluation/results/yolo26m_5ep_gold/`、`evaluation/results/current_best_gold_recheck/`。
+- 遗留与风险：YOLO26m仅训练5 epochs，黄金集表现目前低于旧模型，尤其NO-Mask、Safety Cone和machinery迁移不足；本次切换只能视为默认试用+A/B验证，不能宣称精度升级。比赛稳定版本必须保留YOLOv8n快速回滚；双方复核数据合并后，应从候选权重继续训练30–50 epochs并重新做严格黄金集和长时间摄像头压测。
+## 2026-07-28 14:03 - YOLO26m 五轮候选训练与黄金集评估
+
+- 任务：在不替换现有生产权重的前提下，验证最新 YOLO26m 能否在当前10类PPE数据集上正常训练、部署并形成后续升级候选。
+- 改动：下载 `yolo26m.pt` 预训练权重；先以5%数据跑1 epoch smoke test，再用净化后的4790张训练图、561张验证图运行5 epochs完整候选训练；产物保存到 `runs/yolo26/candidate_5ep/`，未修改 `models/best.pt` 或业务代码。
+- 验证：RTX 5060 8GB上 batch=8 峰值显存约4.83GB，训练和验证无OOM、坏图或标签错误；训练验证集最终 Precision约0.81、Recall约0.78、mAP50=0.853、mAP50-95=0.561，推理约7.7ms；独立40张黄金集为 Precision=0.459、Recall=0.292、mAP50=0.280、mAP50-95=0.128，推理约12.6ms。当前YOLOv8n同黄金集mAP50=0.487、mAP50-95=0.368、推理约3.2ms，但旧权重曾见过其中26张黄金图，结果仅作带泄漏参考。候选 `best.pt`/`last.pt` 各约42MB。
+- 遗留：5 epochs不足以让YOLO26m适应黄金集域分布，当前不得替换生产模型；后续应在复核数据合并后从候选权重继续训练30–50 epochs，再做严格独立评估和实时摄像头压测。
+## 2026-07-28 11:57 - 多模态视觉复核15张扩展批次
+
+- 任务：在5张试验通过后扩大多模态辅助复核批次，处理本机88张任务中的另外15张，并继续遵守明确项修改、模糊项转人工终审的原则。
+- 改动：复核15张图片；11张动漫、收据广告、园艺工具、旅游景观等非PPE或无目标图片清空误标并保存为空标签负样本；测量员图片补充NO-Mask和Safety Vest候选框；4张多人遮挡或多塔吊场景保留现有/新增明确框并标记 `needs_manual_review`。同步更新 `.annotate_progress.json`。
+- 验证：本批11张完成、4张人工终审，15个标签文件的字段数、类别、0-1坐标、宽高和进度计数检查均通过，0个错误；总体进度14/88完成，6张待人工终审。
+- 遗留：待人工终审图片为 `98e50afff9e090c8`、`d7b203b0075e1d84`、`b41b39ad788eabb3`、`ade3c899bd925de4`，主要问题为遮挡人员及多个塔吊/大型机械漏框；其余68张尚未视觉复核。
+## 2026-07-28 11:22 - 用户手动将项目目录改为英文名
+
+- 任务：记录用户本人完成的项目目录英文重命名，避免误归因到其他对话或自动化改动。
+- 改动：用户手动将项目路径从 `F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包` 重命名为 `F:\Multi-hazard Detection System\Multi-hazard Detection System`；项目文件内容和 Git 仓库历史未因本次重命名改变。
+- 验证：新英文路径下存在 `.git`，`git rev-parse --show-toplevel` 返回新仓库根目录，项目结构与 Git 历史可正常读取。
+- 遗留：当前目录仍为同名的两层嵌套结构；后续对话和本地脚本应使用新的英文绝对路径。
+
+## 2026-07-28 11:10 - 多模态视觉复核5张试验批次
+
+- 任务：验证由多模态模型辅助复核88张本机任务的可行性，先处理5张，并坚持仅修改视觉判断明确的标注，模糊目标转人工终审。
+- 改动：在 `data/material_library/review_queue_322_ours_88/labels/` 中复核5张图片；2张单人近景补充2个NO-Mask框和1个Safety Vest框；1张广告图删除错误Person框并作为空标签负样本；1张密集多人图删除与Safety Vest重叠矛盾的NO-Safety Vest框；后两张密集/低分辨率图片写入 `needs_manual_review` 与说明。同步更新 `.annotate_progress.json`。
+- 验证：3张标记完成、2张保留待人工终审；5个标签文件字段、类别、0-1坐标、宽高及进度计数检查全部通过，0个错误；修改后重新渲染可视化预览确认新增框位置合理。
+- 遗留：`00474af9e78e9f8b` 存在遮挡和多人框不完整，`122d668f7f4da501` 为低分辨率工地全景且机械/车辆小目标含混，需人工在标注工具中终审；其余83张尚未视觉复核。
+
 ## 2026-07-27 23:59 - 重建零泄漏训练、验证与黄金评估集
 
 - 任务：清除训练、验证和黄金评估集合中的重复与跨集合泄漏，并让后续数据重建自动保持独立。

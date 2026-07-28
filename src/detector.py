@@ -13,6 +13,12 @@ from ultralytics import YOLO
 class HazardDetector:
     """多类隐患检测器(PPE检测)"""
 
+    EXPECTED_CLASS_NAMES = (
+        "Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
+        "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle",
+    )
+    MODELS_DIR = Path(__file__).parent.parent / "models"
+
     # 检测类别中文名称映射
     LABEL_CN = {
         "helmet": "安全帽",
@@ -42,22 +48,76 @@ class HazardDetector:
         "vehicle": ("blue", "正常记录", "车辆"),
     }
 
+    @classmethod
+    def resolve_model_path(cls):
+        """Read active_model.txt and return the selected local model path."""
+        active_file = cls.MODELS_DIR / "active_model.txt"
+        model_name = "best.pt"
+        try:
+            configured_name = active_file.read_text(encoding="utf-8").strip()
+            if configured_name:
+                model_name = configured_name
+        except OSError:
+            pass
+        # Only a single .pt filename below models/ is valid.
+        if Path(model_name).name != model_name or not model_name.lower().endswith(".pt"):
+            print(f"[model] invalid active_model.txt value: {model_name!r}; using best.pt")
+            model_name = "best.pt"
+        return cls.MODELS_DIR / model_name
+
+    @classmethod
+    def _validate_class_names(cls, model):
+        names = model.names
+        actual_names = tuple(names[index] for index in range(len(names)))
+        if actual_names != cls.EXPECTED_CLASS_NAMES:
+            raise ValueError(
+                f"class order mismatch: expected {cls.EXPECTED_CLASS_NAMES}, got {actual_names}"
+            )
+
+    def _load_ppe_model(self, model_path):
+        model_path = Path(model_path)
+        if not model_path.is_file():
+            raise FileNotFoundError(f"model file does not exist: {model_path}")
+        model = YOLO(str(model_path))
+        self._validate_class_names(model)
+        self.model = model
+        self.model_type = "custom"
+        self.model_path = str(model_path)
+        self.model_version = model_path.name
+
     def __init__(self, model_path=None):
-        """
-        初始化检测器
-        model_path: 模型权重文件路径,默认使用 models/best.pt (PPE模型)
-        """
-        if model_path is None:
-            default_model = Path(__file__).parent.parent / "models" / "best.pt"
-            if default_model.exists():
-                model_path = str(default_model)
-        if model_path and os.path.exists(model_path):
-            self.model = YOLO(model_path)
-            self.model_type = "custom"
-        else:
-            # 回退: COCO预训练模型(仅可检测person)
+        """Initialize the selected PPE model and safely fall back to models/best.pt."""
+        fallback_model = self.MODELS_DIR / "best.pt"
+        requested_model = Path(model_path) if model_path else self.resolve_model_path()
+        self.fallback_used = False
+        self.fallback_reason = ""
+        try:
+            self._load_ppe_model(requested_model)
+        except Exception as error:
+            if requested_model.resolve() != fallback_model.resolve():
+                self.fallback_used = True
+                self.fallback_reason = str(error)
+                print(f"[model] failed to load {requested_model.name}: {error}; falling back to {fallback_model.name}")
+                try:
+                    self._load_ppe_model(fallback_model)
+                except Exception as fallback_error:
+                    self.fallback_reason += f"; {fallback_model.name} failed: {fallback_error}"
+                else:
+                    print(f"[model] loaded fallback {self.model_version}")
+                    return
+            else:
+                self.fallback_used = True
+                self.fallback_reason = str(error)
+                print(f"[model] failed to load {fallback_model.name}: {error}; falling back to COCO yolov8n.pt")
+
+            # Final fallback is explicit in state and UI; it is not a silent PPE substitute.
             self.model = YOLO("yolov8n.pt")
             self.model_type = "coco"
+            self.model_path = "yolov8n.pt"
+            self.model_version = "yolov8n.pt (COCO fallback)"
+            print(f"[model] loaded fallback {self.model_version}")
+        else:
+            print(f"[model] loaded {self.model_version}: {self.model_path}")
 
     def detect(self, image_path, conf=0.4):
         """

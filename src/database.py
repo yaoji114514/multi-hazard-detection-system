@@ -41,7 +41,8 @@ class Database:
                     detections_json TEXT,
                     alerts_json TEXT,
                     project_name TEXT,
-                    inspector TEXT
+                    inspector TEXT,
+                    model_version TEXT
                 )
             """)
             # 实时违规事件表(任务#3: 实时检测违规入库)
@@ -54,12 +55,17 @@ class Database:
                     level TEXT,
                     snapshot_path TEXT,
                     project_name TEXT,
-                    inspector TEXT
+                    inspector TEXT,
+                    model_version TEXT
                 )
             """)
+            for table_name in ("detection_records", "realtime_violations"):
+                columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+                if "model_version" not in columns:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN model_version TEXT")
             conn.commit()
 
-    def save_record(self, detection_result, image_name="", project_name="", inspector=""):
+    def save_record(self, detection_result, image_name="", project_name="", inspector="", model_version=""):
         """保存一条检测记录"""
         summary = detection_result["summary"]
         with closing(sqlite3.connect(self.db_path)) as conn:
@@ -69,8 +75,8 @@ class Database:
                 (timestamp, image_name, result_image_path, total_detections,
                  helmet_count, no_helmet_count, vest_count, no_vest_count,
                  red_alerts, yellow_alerts, has_violation,
-                 detections_json, alerts_json, project_name, inspector)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 detections_json, alerts_json, project_name, inspector, model_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 image_name,
@@ -87,6 +93,7 @@ class Database:
                 json.dumps(detection_result["alerts"], ensure_ascii=False),
                 project_name,
                 inspector,
+                model_version,
             ))
             conn.commit()
             record_id = cursor.lastrowid
@@ -157,7 +164,7 @@ class Database:
 
     # ===== 实时检测违规入库(任务#3) =====
     def save_realtime_violation(self, violation_type, violation_count, level="yellow",
-                                snapshot_path="", project_name="", inspector=""):
+                                snapshot_path="", project_name="", inspector="", model_version=""):
         """保存一条实时违规事件(经节流后入库,非每帧写)
 
         参数:
@@ -170,11 +177,11 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO realtime_violations
-                (timestamp, violation_type, violation_count, level, snapshot_path, project_name, inspector)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (timestamp, violation_type, violation_count, level, snapshot_path, project_name, inspector, model_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                violation_type, violation_count, level, snapshot_path, project_name, inspector,
+                violation_type, violation_count, level, snapshot_path, project_name, inspector, model_version,
             ))
             conn.commit()
             record_id = cursor.lastrowid

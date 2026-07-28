@@ -1,5 +1,19 @@
 ﻿# 项目共享日志
 
+## 2026-07-29 00:50 - yolo26m方向修正：用v4精选训练集重训
+
+- 任务：yolo26m_v1在混杂数据上黄金集mAP50仅0.178，严重过拟合。改用v4时代的1985张干净数据重训yolo26m_v2_clean，验证"大模型+精选数据"方向。
+- 改动：
+  - 新建 data/training_v4clean/：从training_dataset过滤掉ppe_vincent/hardhat_FO/cs/excavator文件，仅保留v4级1985张干净数据
+  - 启动yolo26m_v2_clean训练：100 epochs, batch=8, RTX 5060，当前正在运行
+- 验证：
+  - yolo26m_v1(混杂数据): gold mAP50=0.178, internal val=0.931 — 严重过拟合
+  - v4(YOLOv8n, 同批干净数据): gold mAP50=0.857 — 当前最佳
+- 遗留：
+  - yolo26m_v2_clean训练进行中(epoch 1/100)，预计3-4小时
+  - 中文乱码已修复(app.py, commit d81b8d4)
+  - active_model.txt仍指向yolo26m_5ep.pt
+
 ## 2026-07-28 16:00 - 修复检测框中文标签乱码（cv2.putText→PIL渲染）
 
 - 任务：cv2.putText 的 Hershey 字体不支持 CJK 字符，导致检测框上的中文标签（安全帽/未戴口罩等）显示为乱码方块。

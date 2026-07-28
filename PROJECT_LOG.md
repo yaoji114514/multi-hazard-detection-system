@@ -1,5 +1,15 @@
 ﻿# 项目共享日志
 
+## 2026-07-28 16:00 - 修复检测框中文标签乱码（cv2.putText→PIL渲染）
+
+- 任务：cv2.putText 的 Hershey 字体不支持 CJK 字符，导致检测框上的中文标签（安全帽/未戴口罩等）显示为乱码方块。
+- 改动：
+  - `app.py`：新增 `_put_chinese_text()` 辅助函数，用 PIL/ImageDraw + 微软雅黑字体(`C:\Windows\Fonts\msyh.ttc`) 在图像上绘制中文文本。
+  - `_draw_boxes` 中的两处 `cv2.putText()` 调用替换为 `_put_chinese_text()`。
+  - 新增 `from PIL import Image, ImageDraw, ImageFont` 和 `import numpy as np` 导入。
+- 验证：`py_compile` 通过；代码逻辑未变（仅渲染方式变化）。
+- 遗留：精度问题（yolo26m仅5轮训练）需另建训练任务处理；active_model.txt 仍指向 yolo26m_5ep.pt，如需回滚改为 ppe_v4.pt 即可。
+
 ## 2026-07-28 15:38 - YOLO26m candidate reversible integration
 
 - Task: Complete the logged handoff: make the YOLO26m 5-epoch candidate selectable in the application without replacing the production `models/best.pt`.

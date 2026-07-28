@@ -1,4 +1,4 @@
-"""
+﻿"""
 多类隐患智能检测与预警系统
 基于YOLOv8 + Streamlit
 
@@ -17,6 +17,10 @@ import sys
 import json
 import io
 import cv2
+import numpy as np
+from PIL import Image as PILImage, ImageDraw, ImageFont
+
+_FONT_PATH = r'C:\Windows\Fonts\msyh.ttc'
 import torch
 import threading
 from pathlib import Path
@@ -234,7 +238,20 @@ def _send_realtime_violations(rt_stats, project_name="", inspector=""):
         pass
 
 
+
+def _put_chinese_text(img, text, pos, font_size, color):
+    """用 PIL 在 OpenCV 图像上绘制中文文本（cv2.putText 不支持 CJK）。"""
+    pil_img = PILImage.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+    try:
+        font = ImageFont.truetype(_FONT_PATH, font_size)
+    except Exception:
+        font = ImageFont.load_default()
+    draw.text(pos, text, font=font, fill=color[::-1])  # RGB→BGR
+    img[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
 def _draw_boxes(img, boxes, detector):
+
     """跳帧时用缓存 boxes 在当前帧重画框(任务#12: 框不消失)
 
     boxes: [(x1,y1,x2,y2,cls_id,conf,track_id), ...]
@@ -246,11 +263,11 @@ def _draw_boxes(img, boxes, detector):
         color = {"red": (0, 0, 255), "yellow": (0, 255, 255), "blue": (255, 0, 0)}.get(level_key, (255, 0, 0))
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         label = f"{detector.LABEL_CN.get(label_en, label_en)} {conf_val:.2f}"
-        cv2.putText(img, label, (x1, max(y1 - 6, 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+        _put_chinese_text(img, label, (x1, max(y1 - 6, 12)), 14, color)
         # 显示 track_id(任务: 在检测框上显示追踪ID)
         if tid is not None:
             id_label = f"ID:{tid}"
-            cv2.putText(img, id_label, (x2 - 60, max(y1 - 6, 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            _put_chinese_text(img, id_label, (x2 - 60, max(y1 - 6, 12)), 14, (0, 255, 0))
 
 
 # ========== 页面配置 ==========

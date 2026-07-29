@@ -1,6 +1,17 @@
 ﻿# 项目共享日志
 
 
+## 2026-07-29 20:00 - 建立合作方实地测试集：32张原始标注 + partner_model预标注
+
+- 任务：用 partner_model.pt 对32张合作方实拍自动预标注，建立独立测试集，供人工标注后用做基准评估。
+- 改动：
+  - 新建 data/partner_field_test/：images(32张) + labels(410个预标注框) + data.yaml
+  - 预标注模型：partner_model.pt, conf=0.25
+- 验证：
+  - 410个预标注框：Hardhat 97, Person 134, Safety Vest 75, NO-Mask 55, NO-Safety Vest 34, machinery 8, NO-Hardhat 5, Mask 1, Safety Cone 1
+  - NO-Mask 在29/32张图上被检出（v4仅2-3张）
+- 遗留：待人工逐张标注（删误检、补漏检），标注后以人工标签为ground truth评估模型精度
+
 ## 2026-07-29 10:40 - 竞品分析：对方项目优势功能清单
 
 - 任务：分析竞品日志（2026-07-21~23），提取我们缺失或不如的功能，供分工实施。

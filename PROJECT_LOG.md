@@ -1,4 +1,68 @@
-﻿# 项目共享日志
+## 2026-08-01 17:44 - 同步迁移文档路径至当前工作区
+
+- 任务：处理上一轮补记迁移日志时留下的遗留项，将 `迁移说明.md` 与 `package_manifest.txt` 中的旧路径同步为当前工作区 `E:\stysyysy\stystsyysy`。
+- 改动：`迁移说明.md` 新增「迁移情况」章节，写明 2026-08-01 09:25 在源电脑生成迁移包、17:24 迁入本机，并将「新电脑继续开发」改为「在本机继续开发」；`package_manifest.txt` 补充「迁入时间」与「当前位置」，源项目路径标注为源电脑记录。
+- 验证：当前工作区文件数 37854、总大小 5136.1 MB 与迁移包记录完全一致，确认本工作区即源电脑生成的迁移包；两份文档路径已统一为当前位置，旧路径均有来源标注。
+- 遗留：无。
+
+## 2026-08-01 17:42 - 补记迁移情况：工作区由另一台电脑迁入
+
+- 任务：当前工作区 `E:\stysyysy\stystsyysy` 是从另一台电脑迁移过来的，此前未在日志中记录本次迁移，特此补记情况说明。
+- 改动：仅补记本条日志，未改动任何代码、数据或配置；本次迁入发生在 2026-08-01 17:24（本工作区根目录与 `.git` 创建时间 17:24:37，文件写入至 17:28 完成）。
+- 验证：`git HEAD` 为 `1243caf`（2026-07-29 最后提交），Git 历史与全部未提交改动完整保留；未提交改动清单（`app.py`、`src/dingtalk.py`、`run.bat`、`PROJECT_LOG.md`、`迁移说明.md`、`tools/make_portable.py`、`package_manifest.txt`、`models/partner_model.pt`、`data/partner_field_test/`、`data/training_v4clean/` 等）与 2026-08-01 09:25 日志记录一致；本机 `F:` 盘已不存在日志中记载的源项目目录，来源路径无法进一步核实。
+- 遗留：`迁移说明.md` 与 `package_manifest.txt` 中仍引用旧电脑的 `F:\Multi-hazard Detection System\...` 路径，尚未同步更新为当前路径；如需重训所用的 18GB `hf_datasets` 外部原始数据仍须重新下载。
+
+## 2026-08-01 09:25 - 生成可迁移继续开发包
+
+- 任务：将当前项目打包为可在其他电脑继续开发/运行的完整迁移包，确保当前实现、进度、日志文件和工作守则全部迁移。
+- 改动：
+  - 新增 `tools/make_portable.py`：一键复制项目到目标目录，排除 `.venv`、Python 缓存、`.git/lfs/tmp` 与 18GB 的 `hf_datasets` 外部原始数据
+  - 新增 `迁移说明.md`：说明迁移内容、排除项与新电脑恢复步骤
+  - 将 7 个开发工具脚本中的硬编码旧路径 `F:\多类隐患检测系统_可移植包\...` 改为基于 `__file__` 的项目根相对路径
+  - 生成 `F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包` 完整迁移包（含 .git、models、data、runs、evaluation、archive、日志与 AGENTS.md）
+- 验证：迁移包共 37854 个文件、约 5.0 GB；`git fsck` 通过，Git 历史与全部未提交改动完整保留；关键文件（models、data/db、runs、evaluation、archive、tools/annotate.log、data/uploads/dingtalk_send.log、AGENTS.md、PROJECT_LOG.md、portable/ppe-annotator.exe）均存在；8 个新增/修改 Python 文件 `py_compile` 全部通过；包内代码无残留旧绝对路径。
+- 遗留：未提交改动保持原样，不做提交；迁移包不含 18GB 的 `hf_datasets`，如需重训该数据源需重新下载。
+
+## 2026-07-31 01:10 - 钉钉从自定义机器人webhook升级为企业内部应用机器人
+
+- 任务：自定义机器人无法发送图片（20KB限制、upload_media 404、图床不可用），升级为企业内部应用。用户已提供AppKey/AppSecret。
+- 改动：config/dingtalk.local.json改为app_key+app_secret格式；src/dingtalk.py全面改写为access_token模式（get_token缓存/上传媒体/send_image用media_id替代picUrl）。
+- 验证：待编译通过后测试。
+- 遗留：需restart后验证图片发送。
+
+## 2026-07-31 00:50 - 钉钉自定义机器人图片发送结论：不可行
+
+- 任务：通过日志排查图片发送失败原因，并探索所有可行方案。
+- 结论：
+  1. upload_media端点：自定义机器人webhook返回404 URI不存在
+  2. base64编码msgtype=image：body超20KB硬限制（errcode 460101）
+  3. 0x0.st免费图床：HTTP 503不可用
+  4. catbox.moe：国内无法访问
+  5. 自定义机器人webhook仅支持text/link/markdown/actionCard/feedCard，msgtype=image不在支持列表中
+- 遗留：需升级为钉钉企业内部应用（AppKey+AppSecret+access_token+media upload API）方可发送图片。
+
+## 2026-07-31 00:40 - 修复图片发送：body超20KB限制，加JPEG压缩
+
+- 任务：send_image 返回 errcode=460101，钉钉webhook body上限20000bytes，base64编码后超限。
+- 改动：dingtalk.py send_image 增加 PIL JPEG quality=40 压缩，原始>14KB时触发，确保base64后<20KB。
+- 验证：编译通过。
+- 遗留：无。
+
+## 2026-07-31 00:40 - WebRTC增加国内STUN服务器
+
+- 任务：摄像头连接出现STUN/TURN超时，默认Google STUN在国内不稳定。
+- 改动：app.py webrtc_streamer增加rtc_configuration，添加stun.qq.com:3478作为国内备选。
+- 验证：编译通过。
+- 遗留：无。
+
+## 2026-07-31 00:30 - 产品简化：移除实时统计、改造钉钉推送带裁剪抓拍图
+
+- 任务：产品经理提出去掉实时监测统计，钉钉推送改为markdown格式、去计数、附带违规人员裁剪图。
+- 改动：app.py移除实时画面下方统计卡片与表格；_send_realtime_violations改为markdown无计数格式；frame_violations/to_record链路加入bbox传递并裁剪120px违规区域图；dingtalk.py新增send_markdown/send_image(base64)；config.toml加headless；run.bat加应用模式浏览器启动与headless参数；引入logger写入dingtalk_send.log。
+- 验证：编译通过；markdown文字推送用户确认收到；crop_*.jpg已生成；send_image待用户重启后确认errcode。
+- 遗留：robot/upload_media端点404，已回退base64；需查看日志确认send_image最终结果。
+
+# 项目共享日志
 
 
 ## 2026-07-29 20:00 - 建立合作方实地测试集：32张原始标注 + partner_model预标注

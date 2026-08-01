@@ -1,0 +1,8 @@
+生成时间: 2026-08-01T09:30:49（源电脑）
+源项目: F:\Multi-hazard Detection System\Multi-hazard Detection System（源电脑）
+迁入时间: 2026-08-01T17:24
+当前位置: E:\stysyysy\stystsyysy
+文件数: 37854
+总大小: 5136.1 MB
+
+已排除: .venv / __pycache__ / *.pyc / .git/lfs/tmp / data/material_library/hf_datasets

@@ -6,8 +6,9 @@ from collections import Counter
 
 random.seed(42)
 
-HF = Path(r"F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\material_library\hf_extracted")
-TRAIN = Path(r"F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\training_dataset")
+ROOT = Path(__file__).resolve().parents[1]
+HF = ROOT / "data" / "material_library" / "hf_extracted"
+TRAIN = ROOT / "data" / "training_dataset"
 
 # Model class names for mapping
 MODEL_NAMES = {0:"Hardhat",1:"Mask",2:"NO-Hardhat",3:"NO-Mask",4:"NO-Safety Vest",

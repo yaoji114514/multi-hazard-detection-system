@@ -2,7 +2,7 @@
 from pathlib import Path
 from collections import Counter
 
-BASE = Path(r'F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包')
+BASE = Path(__file__).resolve().parents[1]
 TRAIN_IMG = BASE / 'data' / 'training_dataset' / 'images' / 'train'
 TRAIN_LBL = BASE / 'data' / 'training_dataset' / 'labels' / 'train'
 

@@ -2,7 +2,8 @@
 """Set up annotation directory structure"""
 from pathlib import Path
 
-ANNO_DIR = Path(r'F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\material_library\new_candidates\annotated')
+ROOT = Path(__file__).resolve().parents[4]
+ANNO_DIR = ROOT / 'data' / 'material_library' / 'new_candidates' / 'annotated'
 ANNO_DIR.mkdir(parents=True, exist_ok=True)
 (ANNO_DIR / 'images').mkdir(exist_ok=True)
 (ANNO_DIR / 'labels').mkdir(exist_ok=True)

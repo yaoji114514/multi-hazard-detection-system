@@ -36,10 +36,16 @@ from detector import HazardDetector
 from alert import AlertEngine
 from database import Database
 
+import logging
+_LOG = logging.getLogger("dingtalk_send")
+_LOG.setLevel(logging.DEBUG)
+_LH = logging.FileHandler(str(Path(__file__).parent / "data" / "uploads" / "dingtalk_send.log"), encoding="utf-8")
+_LH.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+_LOG.addHandler(_LH)
 
 # 钉钉通知（配置缺失时不中断启动）
 try:
-    from dingtalk import DingTalkError, send_text
+    from dingtalk import DingTalkError, send_text, send_markdown
     _HAS_DINGTALK = True
 except Exception:
     _HAS_DINGTALK = False
@@ -100,6 +106,8 @@ def get_rt_stats():
         # --- 钉钉实时通知 ---
         "dingtalk_last_send": 0.0,
         "dingtalk_pending_counts": {},
+        "dingtalk_crop_path": None,
+        "dingtalk_crop_types": {},
     }
 
 
@@ -129,6 +137,8 @@ def _reset_rt_stats():
         rt["last_has_violation"] = False
         rt["dingtalk_last_send"] = 0.0
         rt["dingtalk_pending_counts"] = {}
+        rt["dingtalk_crop_path"] = None
+        rt["dingtalk_crop_types"] = {}
     # 锁外 release 旧 recorder(避免长持锁阻塞回调线程)
     if old_recorder is not None:
         try:
@@ -199,6 +209,7 @@ def _send_image_alert(alerts, record_id, image_path, project_name='', inspector=
 
 def _send_realtime_violations(rt_stats, project_name="", inspector=""):
     if not _HAS_DINGTALK:
+        _LOG.warning("_HAS_DINGTALK=False, skip")
         return
     try:
         with rt_stats["lock"]:
@@ -209,33 +220,52 @@ def _send_realtime_violations(rt_stats, project_name="", inspector=""):
             if should_send:
                 rt_stats["dingtalk_last_send"] = now_ts
                 send_counts = dict(pending)
+                crop_path = rt_stats.get("dingtalk_crop_path")
                 pending.clear()
+                rt_stats["dingtalk_crop_path"] = None
+                rt_stats["dingtalk_crop_types"] = {}
+        _LOG.debug("should_send=%s pending=%s", should_send, bool(pending))
         if not (should_send and send_counts):
             return
+        _LOG.info("sending markdown, violations=%s, crop_path=%s", list(send_counts.keys()), crop_path)
         highest = "yellow"
+        violation_cn = []
         for vt in send_counts:
+            cn = HazardDetector.LABEL_CN.get(vt, vt)
+            violation_cn.append(cn)
             lvl = HazardDetector.ALERT_LEVELS.get(vt, ("blue",))[0]
             if lvl == "red":
                 highest = "red"
                 break
         cn_level = {"red": "红色预警", "yellow": "黄色预警"}
-        lines = [cn_level.get(highest, "预警") + " - 实时检测", ""]
+        title = cn_level.get(highest, "预警") + " - 实时检测"
+        lines = ["## " + title, ""]
         if project_name:
-            lines.append("项目：" + project_name)
+            lines.append("**项目：**" + project_name)
         if inspector:
-            lines.append("检查人：" + inspector)
+            lines.append("**检查人：**" + inspector)
         ts = __import__("datetime").datetime.now()
-        lines.append("时间：" + ts.strftime("%H:%M") + " (近60秒汇总)")
+        lines.append("**时间：**" + ts.strftime("%H:%M") + " (近60秒汇总)")
         lines.append("")
-        lines.append("最近违规：")
-        for vt, cnt in send_counts.items():
-            cn = HazardDetector.LABEL_CN.get(vt, vt)
-            lines.append("  " + cn + " x " + str(cnt))
+        lines.append("**检测到以下违规：**")
+        for cn in violation_cn:
+            lines.append("- " + cn)
         lines.append("")
         lines.append("本消息由多类隐患检测系统自动发送（60s 汇总）")
-        send_text("\n".join(lines))
+        # 先发文字
+        send_markdown(title, "\n".join(lines))
+        _LOG.info("markdown sent OK")
+        # 再发裁剪图(base64直传,不做markdown内嵌)
+        if crop_path and Path(crop_path).exists():
+            try:
+                __import__("dingtalk", fromlist=["send_image"]).send_image(crop_path)
+                _LOG.info("image sent OK: %s", crop_path)
+            except Exception:
+                _LOG.exception("image send FAILED: %s", crop_path)
+        else:
+            _LOG.warning("no crop_path or file missing: %s", crop_path)
     except Exception:
-        pass
+        _LOG.exception("_send_realtime_violations FAILED")
 
 
 
@@ -655,7 +685,7 @@ elif page == "🎥 实时检测":
                             has_helmet_violation = True
                         if label_en in ("no-helmet", "no-vest", "no-mask"):
                             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                            frame_violations.append((label_en, tid, cx, cy))
+                            frame_violations.append((label_en, tid, cx, cy, int(x1), int(y1), int(x2), int(y2)))
                 _draw_boxes(annotated, last_boxes, detector)  # 画中文框(与跳帧一致)
                 # 缓存 last_boxes + has_violation(供跳帧重画用)
                 with rt_stats["lock"]:
@@ -681,7 +711,7 @@ elif page == "🎥 实时检测":
                 if do_detect:
                     for label_en, cnt in frame_counts.items():
                         rt_stats["classes"][label_en] = rt_stats["classes"].get(label_en, 0) + cnt
-                    for vtype, tid, cx, cy in frame_violations:
+                    for vtype, tid, cx, cy, bx1, by1, bx2, by2 in frame_violations:
                         # 任务#11: track_id 去重(主) — 已记录目标不再统计/入库
                         key = f"{tid}:{vtype}" if tid is not None else None
                         if key and key in rt_stats["recorded_tracks"]:
@@ -698,7 +728,7 @@ elif page == "🎥 实时检测":
                             rt_stats["recorded_tracks"].add(key)
                         pos_list.append((cx, cy, now + POS_DEDUPE_TIME))
                         level = detector.ALERT_LEVELS.get(vtype, ("blue",))[0]
-                        to_record.append((vtype, 1, level))
+                        to_record.append((vtype, 1, level, bx1, by1, bx2, by2))
                         rt_stats["dingtalk_pending_counts"][vtype] = rt_stats["dingtalk_pending_counts"].get(vtype, 0) + 1
                         # 红色告警(任务#4): no-helmet 节流触发
                         if vtype == "no-helmet" and now - rt_stats.get("red_alert_time", 0) >= RED_ALERT_COOLDOWN:
@@ -707,25 +737,36 @@ elif page == "🎥 实时检测":
                 rt_stats["last_error"] = None
             # 锁外: 入库 + 抓拍(任务#3/#5)
             if to_record:
+                _LOG.info("to_record=%d items, annotated.shape=%s", len(to_record), annotated.shape)
                 db = rt_stats.get("db")
                 proj = rt_stats.get("project_name", "")
                 insp = rt_stats.get("inspector", "")
-                if db is None:
-                    with rt_stats["lock"]:
-                        rt_stats["last_error"] = "Database 实例未预热,入库跳过"
-                    to_record = []
                 snap_dir = Path(__file__).parent / "data" / "uploads" / "snapshots"
                 snap_dir.mkdir(parents=True, exist_ok=True)
-                for vtype, vcount, vlevel in to_record:
+                for vtype, vcount, vlevel, bx1, by1, bx2, by2 in to_record:
                     try:
                         snap_path = snap_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{vtype}.jpg"
                         cv2.imwrite(str(snap_path), annotated)
-                        db.save_realtime_violation(
-                            violation_type=vtype, violation_count=vcount,
-                            level=vlevel, snapshot_path=str(snap_path),
-                            project_name=proj, inspector=insp,
-                            model_version=detector.model_version,
-                        )
+                        # 裁剪违规区域(带边距),用于钉钉推送
+                        PAD = 120
+                        h_img, w_img = annotated.shape[:2]
+                        cropped = annotated[max(0, by1 - PAD):min(h_img, by2 + PAD),
+                                            max(0, bx1 - PAD):min(w_img, bx2 + PAD)]
+                        crop_path = snap_dir / f"crop_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{vtype}.jpg"
+                        cv2.imwrite(str(crop_path), cropped)
+                        _LOG.info("crop saved: %s (%dx%d)", crop_path.name, cropped.shape[1], cropped.shape[0])
+                        with rt_stats["lock"]:
+                            rt_stats["dingtalk_crop_path"] = str(crop_path)
+                        if db is not None:
+                            try:
+                                db.save_realtime_violation(
+                                    violation_type=vtype, violation_count=vcount,
+                                    level=vlevel, snapshot_path=str(snap_path),
+                                    project_name=proj, inspector=insp,
+                                    model_version=detector.model_version,
+                                )
+                            except Exception:
+                                pass
                         with rt_stats["lock"]:
                             rt_stats["realtime_record_count"] += 1
                     except Exception as e:
@@ -775,6 +816,12 @@ elif page == "🎥 实时检测":
         video_frame_callback=video_frame_callback,
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True,
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun.qq.com:3478"]},
+            ]
+        },
     )
 
     # ----- 统计面板(fragment 每0.5s局部刷新,避免全页rerun打断WebRTC画面/滑块交互) -----
@@ -800,36 +847,11 @@ elif page == "🎥 实时检测":
                 if last_rec and os.path.exists(last_rec):
                     st.success(f"✅ 录制已保存: {os.path.basename(last_rec)}")
                     st.video(last_rec)
-            st.markdown("#### 📊 累计检测统计")
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("累计处理帧数", snap["frames"])
-            m2.metric("累计违规次数", snap["violations"])
-            m3.metric("🔴 未戴安全帽", snap["violation_classes"].get("no-helmet", 0))
-            m4.metric("🟡 未穿反光衣", snap["violation_classes"].get("no-vest", 0))
-            m5.metric("🟡 未戴口罩", snap["violation_classes"].get("no-mask", 0))
-
-            # 入库计数(任务#3)
-            rt_cnt = snap.get("realtime_record_count", 0)
-            if rt_cnt > 0:
-                st.caption(f"🗃️ 已入库 **{rt_cnt}** 条违规事件(每 {int(ALERT_COOLDOWN)}s 节流去重)")
-            else:
-                st.caption(f"🗃️ 违规事件将每 {int(ALERT_COOLDOWN)}s 入库一次(检测到违规后开始)")
 
             # 错误提示(不再静默吞掉异常)
             if snap["last_error"]:
                 st.error(f"⚠️ 检测异常(画面已回退为原图): {snap['last_error']}")
 
-            if snap["classes"]:
-                st.markdown("**各类目标累计检测:**")
-                class_df = pd.DataFrame([
-                    {"目标类别": detector.LABEL_CN.get(k, k), "英文标签": k, "累计数量": v}
-                    for k, v in sorted(snap["classes"].items(), key=lambda x: -x[1])
-                ])
-                st.dataframe(class_df, use_container_width=True, hide_index=True)
-            elif snap["frames"] == 0:
-                st.info("尚未检测到目标,点击 START 启动摄像头开始检测。")
-            else:
-                st.warning(f"已处理 {snap['frames']} 帧但未检测到任何目标,尝试调低置信度阈值或对准目标。")
 
     _render_rt_stats()
 

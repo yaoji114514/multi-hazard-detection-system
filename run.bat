@@ -27,7 +27,9 @@ if not errorlevel 1 goto already_running
 ".venv\Scripts\python.exe" src\configure_streamlit.py
 if errorlevel 1 goto config_error
 
-".venv\Scripts\python.exe" -m streamlit run app.py
+
+call :open_browser
+".venv\Scripts\python.exe" -m streamlit run app.py --server.headless true
 goto stopped
 
 :system_python
@@ -48,7 +50,9 @@ if not errorlevel 1 goto already_running
 python src\configure_streamlit.py
 if errorlevel 1 goto config_error
 
-python -m streamlit run app.py
+
+call :open_browser
+python -m streamlit run app.py --server.headless true
 goto stopped
 
 :venv_error
@@ -69,7 +73,7 @@ goto failed
 
 :already_running
 echo [信息] 系统已经在运行，正在打开页面...
-start "" "http://localhost:8501"
+call :open_browser
 exit /b 0
 
 :failed
@@ -81,3 +85,15 @@ exit /b 1
 echo.
 echo 服务已停止
 pause
+
+:open_browser
+if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
+    start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:8501
+    goto :eof
+)
+if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
+    start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=http://localhost:8501
+    goto :eof
+)
+start "" http://localhost:8501
+goto :eof

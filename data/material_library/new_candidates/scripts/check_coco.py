@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from collections import Counter
 
-BASE = Path(r"F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\material_library\hf_extracted")
+BASE = Path(__file__).resolve().parents[4] / "data" / "material_library" / "hf_extracted"
 
 for ds_name in ["construction_safety", "excavator"]:
     ds = BASE / ds_name

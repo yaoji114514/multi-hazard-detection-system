@@ -29,6 +29,10 @@ data/material_library/review_queue*/
 # ===== ?????????????????????=====
 data/training_dataset/images/
 data/training_dataset/labels/
+data/training_v4clean/images/
+data/training_v4clean/labels/
+data/partner_field_test/images/
+data/partner_field_test/labels/
 /runs/
 /yolo*.pt
 /models/yolo26m_*.pt

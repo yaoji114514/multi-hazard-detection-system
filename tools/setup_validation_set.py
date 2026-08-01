@@ -16,7 +16,7 @@ SELECTED = [
     "7fee07d795fec02d",
 ]
 
-ROOT = Path("F:/多类隐患检测系统_可移植包/多类隐患检测系统_可移植包")
+ROOT = Path(__file__).resolve().parents[1]
 SRC_RAW = ROOT / "data" / "material_library" / "new_candidates" / "raw"
 DST_IMG = ROOT / "evaluation" / "datasets" / "ppe" / "images" / "val"
 DST_LBL = ROOT / "evaluation" / "datasets" / "ppe" / "labels" / "val"

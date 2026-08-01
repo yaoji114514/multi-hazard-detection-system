@@ -4,8 +4,9 @@ from pathlib import Path
 from PIL import Image
 import hashlib
 
-SRC = Path(r"F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\material_library\missing_classes")
-RAW = Path(r"F:\多类隐患检测系统_可移植包\多类隐患检测系统_可移植包\data\material_library\new_candidates\raw")
+ROOT = Path(__file__).resolve().parents[4]
+SRC = ROOT / "data" / "material_library" / "missing_classes"
+RAW = ROOT / "data" / "material_library" / "new_candidates" / "raw"
 
 seen = set(f.stem[:16] for f in RAW.glob("*.jpg"))
 copied = 0

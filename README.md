@@ -16,18 +16,21 @@ Windows 首次运行：
 
 ```text
 app.py                 Streamlit 应用入口
-src/                   检测、预警、数据库模块
-models/best.pt         PPE 检测模型
-data/sample_images/    示例图片
-data/sample_videos/    示例视频
-data/alert.wav         告警音频
-setup.bat              环境安装
+src/                   检测、预警、数据库、钉钉模块
+models/                AI 模型权重 + active_model.txt（当前启用模型）
+config/                配置（钉钉示例；本地密钥配置不入库）
+tools/                 开发工具（标注/评估/训练数据/钉钉测试），legacy/ 为已弃用工具
+data/                  数据目录（db、uploads、训练集、素材库等，本地不入库）
+setup.bat              环境安装（自动检测 GPU，装 CUDA/CPU 版 PyTorch）
 run.bat                应用启动
-verify_install.py      安装与模型验证
+run_annotate.bat       标注工具启动
+使用说明.md             完整安装、使用与钉钉配置说明
+迁移说明.md             跨电脑迁移说明
+AGENTS.md              多对话协作规则
 PROJECT_LOG.md         跨对话共享工作日志
 ```
 
-`data/db/`、`data/uploads/`、`.venv/` 和缓存目录均为本地生成内容，不纳入版本控制。
+`data/db/`、`data/uploads/`、`data/training_dataset/`、`data/training_v4clean/`、`data/partner_field_test/`、`runs/`、`archive/`、`.venv/` 和缓存目录均为本地内容，不纳入版本控制。
 
 ## 验证
 

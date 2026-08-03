@@ -342,6 +342,37 @@ def get_alert_engine():
     return AlertEngine()
 
 
+def _render_dingtalk_group_toggles():
+    """侧边栏钉钉群白名单开关：勾选=启用推送，取消=停用（机器人无需退群），实时写入本地配置。"""
+    if not _HAS_DINGTALK:
+        return
+    try:
+        import dingtalk as _dt
+        webhooks = _dt.list_webhooks()
+    except Exception:
+        return
+    changed = False
+    with st.sidebar.expander("钉钉群开关", expanded=False):
+        st.sidebar.caption("勾选 = 启用，取消 = 停用（机器人无需退群）")
+        for i, w in enumerate(webhooks):
+            checked = st.sidebar.checkbox(w["name"], value=w["enabled"], key=f"dt_group_{i}")
+            if checked != w["enabled"]:
+                w["enabled"] = checked
+                changed = True
+    if changed:
+        try:
+            cfg_path = Path(__file__).parent / "config" / "dingtalk.local.json"
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+            for w in webhooks:
+                for item in cfg.get("webhooks", []):
+                    if item.get("name") == w["name"]:
+                        item["enabled"] = w["enabled"]
+            cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            st.sidebar.success("钉钉群开关已保存，下次推送生效")
+        except Exception as exc:
+            st.sidebar.error(f"钉钉群开关保存失败: {exc}")
+
+
 # ========== 侧边栏 ==========
 st.sidebar.title("🏗️ 隐患检测系统")
 st.sidebar.markdown("---")
@@ -357,6 +388,8 @@ active_detector = get_current_detector()
 st.sidebar.caption(f"Current model: {active_detector.model_version}")
 if active_detector.fallback_used:
     st.sidebar.warning(f"Model fallback enabled: {active_detector.fallback_reason}")
+
+_render_dingtalk_group_toggles()
 
 st.sidebar.markdown("---")
 st.sidebar.caption("五建(环科)公司 AI应用创新大赛参赛作品")

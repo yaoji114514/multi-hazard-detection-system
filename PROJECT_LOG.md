@@ -1,3 +1,60 @@
+## 2026-08-03 16:20 - 确定钉钉正式通道：webhook#2，webhook#1 弃用
+
+- 任务：另一个群（webhook#1）机器人开启「自定义关键词」安全校验，尝试 报警/隐患/检测/通知/安全/告警 均返回 310000，用户确认不采用，正式通道定为 webhook#2。
+- 改动：无代码改动；`config/dingtalk.local.json` 的 `webhook` 字段维持指向 webhook#2（此前已配置）。
+- 验证：webhook#2 文字、markdown、图片（markdown 嵌入 media_id）均已实测 errcode=0；裁剪图推送链路（画框→120px 边距裁剪→上传→发送）模拟测试通过，裁剪图 `data/uploads/snapshots/crop_20260803_test_no-helmet.jpg` 已生成并成功推送。
+- 遗留：本机未安装 Python，模块级/app 级回归未跑，需在装有 Python 的机器上执行 `tools/test_dingtalk.py` 或 `run.bat` 触发一次违规做最终确认；后续如需换群，只改本地配置 `webhook` 字段。
+
+## 2026-08-03 16:30 - 白名单新增「群2」并验证多群推送
+
+- 任务：用户提供另一个群的 webhook，加入多群白名单。
+- 改动：`config/dingtalk.local.json` 的 `webhooks` 新增「群2」（enabled=true；名称可随时在配置中修改）。
+- 验证：新群文字测试 errcode=0；模块级多群测试 `list_webhooks` 返回 2 个启用群，`send_text` 与 `send_image`（上传一次 media_id、两个群同时发送）均 errcode=0，默认群与群2 均已收到文字和裁剪图。
+- 遗留：无（改群名只需改配置 `name` 字段）。
+
+## 2026-08-03 16:29 - 钉钉群开关界面化 + app 启动验证
+
+- 任务：确认依赖环境（位于 `D:\我的\李一平\多类隐患检测系统_可移植包\.venv`，Python 3.13.14，含 streamlit 1.59.2 / torch 2.6.0+cu124 / ultralytics）；把多群白名单开关做成 app 侧边栏界面。
+- 改动：
+  - `app.py`：新增 `_render_dingtalk_group_toggles()`，侧边栏「钉钉群开关」折叠面板，按群勾选=启用、取消=停用，变更实时写回 `config/dingtalk.local.json` 的 `webhooks[].enabled`。
+  - 工作区根目录创建 `.venv` Junction 指向 D 盘 venv（`.venv` 已被 .gitignore 排除，不入库），使 `run.bat` 双击启动恢复可用。
+- 验证：`py_compile` 通过；Streamlit AppTest 执行 `app.py` 零异常，侧边栏成功渲染「钉钉群开关」及「默认群=True」；headless 服务 `/_stcore/health` 返回 HTTP 200；`run.bat --check` 输出 [OK]。
+- 遗留：`.venv` 是指向 D 盘副本的 Junction，若日后在 E 盘工作区运行 `setup.bat` 需先删除该链接；WebRTC/摄像头实机链路建议在有摄像头时实测一次。
+
+## 2026-08-03 16:24 - 钉钉支持多群白名单开关
+
+- 任务：把同一条通知发送到多个群，并支持按群启停（白名单开关），停用某群时无需让机器人退群。
+- 改动：
+  - `src/dingtalk.py`：配置支持 `webhooks` 列表（`name`/`webhook`/`enabled`），只向 `enabled=true` 的群发送；单个群失败仅记日志、不影响其他群，全部失败才抛异常；新增 `list_webhooks()` 供管理和界面使用；兼容旧的单 `webhook` 字符串配置。
+  - `config/dingtalk.local.json`：迁移为新格式（`webhooks` 列表，当前为「默认群」= webhook#2，enabled=true）。
+  - `config/dingtalk.example.json`：更新为 A/B 双群示例（B 群 enabled=false 展示停用写法）。
+- 验证：`py_compile` 通过；临时配置测试——`list_webhooks` 返回全部群、`load_config` 仅返回启用群、全部停用时正确抛出「没有启用的机器人 webhook」；真实发送文字（test_dingtalk.py）、markdown、裁剪图均 errcode=0 送达默认群。
+- 遗留：app 界面开关未做（当前改配置 `enabled` 即可，无需重启）；如需在 Streamlit 侧边栏加群开关，待依赖环境就绪后再补。
+
+## 2026-08-03 16:18 - 钉钉链路模块级回归通过（真实 Python）
+
+- 任务：用户指出本机已装 Python（位于 Codex 运行时依赖目录、未加入 PATH），补齐此前遗留的模块级回归。
+- 改动：无代码改动。
+- 验证：使用 Python 3.12.13（`C:\Users\34165\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`）对 `src/dingtalk.py`、`app.py` 等 7 个文件 `py_compile` 全部通过；`tools/test_dingtalk.py`（send_text）成功；直接调用 `src/dingtalk.py` 的 `send_markdown`、`send_image` 均返回 errcode=0。钉钉链路（文字/markdown/裁剪图）在真实代码路径下全部验证通过。
+- 遗留：完整 app 运行仍需第三方依赖（streamlit/ultralytics/torch，需双击 `setup.bat` 建 .venv）；webhook#1 弃用，webhook#2 为正式通道。
+
+## 2026-08-03 16:12 - 修正钉钉图片推送：markdown 嵌入图片替代 msgtype=image
+
+- 任务：用户反馈 16:10 发送的测试图在群里以「表情包」样式显示而非普通图片。确认 robot/send 的 `msgtype=image` 在群内渲染为表情，改用钉钉推荐方式——markdown 消息中用 media_id 作为图片地址（`![图片说明](media_id)`）显示普通图片。
+- 改动：`src/dingtalk.py` 的 `send_image` 改为上传媒体后发送 markdown 消息嵌入图片（`title=违规图片`）。
+- 验证：实测 `gettoken → media/upload → robot/send markdown ![图](media_id)` 返回 errcode=0；已向 webhook#2 所在群发送第二条测试消息，待用户目视确认显示为普通图片。
+- 遗留：无（用户确认后即为此方案的最终形态）。
+
+## 2026-08-03 16:10 - 修复企业应用机器人钉钉发送链路（webhook 发送 + app token 传图）
+
+- 任务：用户提供企业机器人 webhook 后，实测发现现有代码的发送链路不通：`robot/send` 用 app access_token 调用返回 300005「token is not exist」，图片消息用 `media_id` 字段被拒（要求 `picURL`）。通过逐接口实测确定正确链路并修复代码。
+- 改动：
+  - `src/dingtalk.py`：`robot/send` 改为直接 POST 配置中的机器人 webhook（不再拼 app token）；`send_image` 上传媒体后改用 `image.picURL=media_id` 发送；配置读取新增 `webhook` 字段，并用 `utf-8-sig` 兼容 BOM。
+  - `config/dingtalk.local.json`：新增 `webhook` 字段（本机密钥文件，Git 忽略），保留原有 `app_key`/`app_secret`。
+  - `config/dingtalk.example.json`：同步为新格式（`app_key`/`app_secret`/`webhook`）。
+- 验证：逐接口实测通过——`gettoken`(errcode=0) → `media/upload`(拿到 media_id) → `robot/send` 文字、markdown、图片(picURL=media_id) 均 errcode=0；webhook#2 所在群已收到文字、markdown、测试图各一条。旧方式（app token 调 robot/send）返回 300005，图片字段 media_id 返回 400802，均已确认废弃。
+- 遗留：本机未安装 Python，未做模块级回归（`tools/test_dingtalk.py` 需在装有 Python 的机器上复测）；用户提供的 webhook#1 带自定义关键词校验（310000），未采用；如需切换机器人，只改配置中的 `webhook` 字段即可。
+
 ## 2026-08-01 17:44 - 同步迁移文档路径至当前工作区
 
 - 任务：处理上一轮补记迁移日志时留下的遗留项，将 `迁移说明.md` 与 `package_manifest.txt` 中的旧路径同步为当前工作区 `E:\stysyysy\stystsyysy`。

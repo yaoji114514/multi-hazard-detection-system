@@ -20,6 +20,7 @@ src/                   检测、预警、数据库、钉钉模块
 models/                AI 模型权重 + active_model.txt（当前启用模型）
 config/                配置（钉钉示例；本地密钥配置不入库）
 tools/                 开发工具（标注/评估/训练数据/钉钉测试），legacy/ 为已弃用工具
+tests/                 离线自动化回归测试（标准库 unittest）
 data/                  数据目录（db、uploads、训练集、素材库等，本地不入库）
 setup.bat              环境安装（自动检测 GPU，装 CUDA/CPU 版 PyTorch）
 run.bat                应用启动
@@ -36,6 +37,15 @@ PROJECT_LOG.md         跨对话共享工作日志
 
 ```powershell
 .\.venv\Scripts\python.exe verify_install.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+测量全工作区 Python 代码的分支覆盖率：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m coverage run -m unittest discover -s tests
+.\.venv\Scripts\python.exe -m coverage report
 ```
 
 ## 协作

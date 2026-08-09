@@ -66,6 +66,7 @@ RED_ALERT_COOLDOWN = 5.0   # 红色告警节流期(秒),避免连续轰击
 RED_ALERT_DISPLAY = 2.0    # 弹窗持续显示时长(秒)
 # 钉钉实时通知节流
 DINGTALK_REALTIME_COOLDOWN = 60.0
+DINGTALK_RETRY_DELAYS = (30.0, 60.0, 120.0)
 # 目标跟踪去重(任务#11): track_id 去重 + 位置兜底(防 track 跳变误判)
 POS_DEDUPE_RADIUS = 80     # 位置兜底半径(像素,bbox 中心点距离)
 POS_DEDUPE_TIME = 30.0     # 位置兜底有效期(秒)
@@ -108,6 +109,10 @@ def get_rt_stats():
         "dingtalk_pending_counts": {},
         "dingtalk_crop_path": None,
         "dingtalk_crop_types": {},
+        "dingtalk_batch": None,
+        "dingtalk_sending": False,
+        "dingtalk_retry_count": 0,
+        "dingtalk_retry_at": 0.0,
     }
 
 
@@ -139,6 +144,10 @@ def _reset_rt_stats():
         rt["dingtalk_pending_counts"] = {}
         rt["dingtalk_crop_path"] = None
         rt["dingtalk_crop_types"] = {}
+        rt["dingtalk_batch"] = None
+        rt["dingtalk_sending"] = False
+        rt["dingtalk_retry_count"] = 0
+        rt["dingtalk_retry_at"] = 0.0
     # 锁外 release 旧 recorder(避免长持锁阻塞回调线程)
     if old_recorder is not None:
         try:
@@ -211,22 +220,33 @@ def _send_realtime_violations(rt_stats, project_name="", inspector=""):
     if not _HAS_DINGTALK:
         _LOG.warning("_HAS_DINGTALK=False, skip")
         return
-    try:
-        with rt_stats["lock"]:
-            now_ts = __import__("time").time()
-            pending = rt_stats.get("dingtalk_pending_counts", {})
-            last_send = rt_stats.get("dingtalk_last_send", 0)
-            should_send = (now_ts - last_send >= DINGTALK_REALTIME_COOLDOWN)
-            if should_send:
-                rt_stats["dingtalk_last_send"] = now_ts
-                send_counts = dict(pending)
-                crop_path = rt_stats.get("dingtalk_crop_path")
-                pending.clear()
-                rt_stats["dingtalk_crop_path"] = None
-                rt_stats["dingtalk_crop_types"] = {}
-        _LOG.debug("should_send=%s pending=%s", should_send, bool(pending))
-        if not (should_send and send_counts):
+    now_ts = __import__("time").time()
+    with rt_stats["lock"]:
+        if rt_stats.get("dingtalk_sending", False):
             return
+        if now_ts < rt_stats.get("dingtalk_retry_at", 0.0):
+            return
+        batch = rt_stats.get("dingtalk_batch")
+        if batch is None:
+            pending = rt_stats.get("dingtalk_pending_counts", {})
+            last_send = rt_stats.get("dingtalk_last_send", 0.0)
+            if not pending or now_ts - last_send < DINGTALK_REALTIME_COOLDOWN:
+                return
+            batch = {
+                "counts": dict(pending),
+                "crop_path": rt_stats.get("dingtalk_crop_path"),
+                "project_name": project_name,
+                "inspector": inspector,
+                "created_at": now_ts,
+                "text_sent": False,
+            }
+            rt_stats["dingtalk_batch"] = batch
+            rt_stats["dingtalk_retry_count"] = 0
+        rt_stats["dingtalk_sending"] = True
+
+    try:
+        send_counts = batch["counts"]
+        crop_path = batch["crop_path"]
         _LOG.info("sending markdown, violations=%s, crop_path=%s", list(send_counts.keys()), crop_path)
         highest = "yellow"
         violation_cn = []
@@ -236,25 +256,30 @@ def _send_realtime_violations(rt_stats, project_name="", inspector=""):
             lvl = HazardDetector.ALERT_LEVELS.get(vt, ("blue",))[0]
             if lvl == "red":
                 highest = "red"
-                break
         cn_level = {"red": "红色预警", "yellow": "黄色预警"}
         title = cn_level.get(highest, "预警") + " - 实时检测"
         lines = ["## " + title, ""]
-        if project_name:
-            lines.append("**项目：**" + project_name)
-        if inspector:
-            lines.append("**检查人：**" + inspector)
-        ts = __import__("datetime").datetime.now()
-        lines.append("**时间：**" + ts.strftime("%H:%M") + " (近60秒汇总)")
+        if batch["project_name"]:
+            lines.append("**项目：**" + batch["project_name"])
+        if batch["inspector"]:
+            lines.append("**检查人：**" + batch["inspector"])
+        ts = __import__("datetime").datetime.fromtimestamp(batch["created_at"])
+        cooldown = int(DINGTALK_REALTIME_COOLDOWN)
+        lines.append(f"**时间：**{ts:%H:%M} (近{cooldown}秒汇总)")
         lines.append("")
         lines.append("**检测到以下违规：**")
         for cn in violation_cn:
             lines.append("- " + cn)
         lines.append("")
-        lines.append("本消息由多类隐患检测系统自动发送（60s 汇总）")
+        lines.append(f"本消息由多类隐患检测系统自动发送（{cooldown}s 汇总）")
         # 先发文字
-        send_markdown(title, "\n".join(lines))
-        _LOG.info("markdown sent OK")
+        if not batch["text_sent"]:
+            send_markdown(title, "\n".join(lines))
+            with rt_stats["lock"]:
+                if rt_stats.get("dingtalk_batch") is not batch:
+                    return
+                batch["text_sent"] = True
+            _LOG.info("markdown sent OK")
         # 再发裁剪图(base64直传,不做markdown内嵌)
         if crop_path and Path(crop_path).exists():
             try:
@@ -262,10 +287,37 @@ def _send_realtime_violations(rt_stats, project_name="", inspector=""):
                 _LOG.info("image sent OK: %s", crop_path)
             except Exception:
                 _LOG.exception("image send FAILED: %s", crop_path)
+                raise
         else:
             _LOG.warning("no crop_path or file missing: %s", crop_path)
+
+        with rt_stats["lock"]:
+            if rt_stats.get("dingtalk_batch") is batch:
+                pending = rt_stats.get("dingtalk_pending_counts", {})
+                for violation_type, sent_count in send_counts.items():
+                    remaining = pending.get(violation_type, 0) - sent_count
+                    if remaining > 0:
+                        pending[violation_type] = remaining
+                    else:
+                        pending.pop(violation_type, None)
+                if rt_stats.get("dingtalk_crop_path") == crop_path:
+                    rt_stats["dingtalk_crop_path"] = None
+                    rt_stats["dingtalk_crop_types"] = {}
+                rt_stats["dingtalk_last_send"] = __import__("time").time()
+                rt_stats["dingtalk_batch"] = None
+                rt_stats["dingtalk_sending"] = False
+                rt_stats["dingtalk_retry_count"] = 0
+                rt_stats["dingtalk_retry_at"] = 0.0
     except Exception:
-        _LOG.exception("_send_realtime_violations FAILED")
+        retry_delay = None
+        with rt_stats["lock"]:
+            if rt_stats.get("dingtalk_batch") is batch:
+                retry_count = rt_stats.get("dingtalk_retry_count", 0) + 1
+                retry_delay = DINGTALK_RETRY_DELAYS[min(retry_count - 1, len(DINGTALK_RETRY_DELAYS) - 1)]
+                rt_stats["dingtalk_retry_count"] = retry_count
+                rt_stats["dingtalk_retry_at"] = __import__("time").time() + retry_delay
+                rt_stats["dingtalk_sending"] = False
+        _LOG.exception("_send_realtime_violations FAILED; retry in %ss", retry_delay)
 
 
 
@@ -769,11 +821,11 @@ elif page == "🎥 实时检测":
                             rt_stats["red_alert_played"] = False
                 rt_stats["last_error"] = None
             # 锁外: 入库 + 抓拍(任务#3/#5)
+            proj = rt_stats.get("project_name", "")
+            insp = rt_stats.get("inspector", "")
             if to_record:
                 _LOG.info("to_record=%d items, annotated.shape=%s", len(to_record), annotated.shape)
                 db = rt_stats.get("db")
-                proj = rt_stats.get("project_name", "")
-                insp = rt_stats.get("inspector", "")
                 snap_dir = Path(__file__).parent / "data" / "uploads" / "snapshots"
                 snap_dir.mkdir(parents=True, exist_ok=True)
                 for vtype, vcount, vlevel, bx1, by1, bx2, by2 in to_record:
@@ -805,6 +857,7 @@ elif page == "🎥 实时检测":
                     except Exception as e:
                         with rt_stats["lock"]:
                             rt_stats["last_error"] = f"入库/抓拍失败 {vtype}: {e}"
+            if _HAS_DINGTALK:
                 _send_realtime_violations(rt_stats, proj, insp)
         except Exception as e:
             annotated = img

@@ -1,9 +1,35 @@
-## 2026-08-03 16:20 - 确定钉钉正式通道：webhook#2，webhook#1 弃用
+# 项目共享日志
 
-- 任务：另一个群（webhook#1）机器人开启「自定义关键词」安全校验，尝试 报警/隐患/检测/通知/安全/告警 均返回 310000，用户确认不采用，正式通道定为 webhook#2。
-- 改动：无代码改动；`config/dingtalk.local.json` 的 `webhook` 字段维持指向 webhook#2（此前已配置）。
-- 验证：webhook#2 文字、markdown、图片（markdown 嵌入 media_id）均已实测 errcode=0；裁剪图推送链路（画框→120px 边距裁剪→上传→发送）模拟测试通过，裁剪图 `data/uploads/snapshots/crop_20260803_test_no-helmet.jpg` 已生成并成功推送。
-- 遗留：本机未安装 Python，模块级/app 级回归未跑，需在装有 Python 的机器上执行 `tools/test_dingtalk.py` 或 `run.bat` 触发一次违规做最终确认；后续如需换群，只改本地配置 `webhook` 字段。
+## 2026-08-09 07:55 - 实时钉钉通知失败保留与退避重试
+
+- 任务：修复实时通知在网络发送前清空待发送隐患、失败后数据丢失且无法自动重试的问题。
+- 改动：`app.py` 将实时通知保存为受锁保护的在途批次，文字和裁剪图均成功后才扣除对应待发计数并更新时间；失败时保留批次，按 30/60/120 秒封顶退避，并用发送中标志避免并发重复；文字已成功而图片失败时仅重试图片；摄像头回调在无新违规时也检查待重试批次。`tests/test_app_helpers.py` 补充失败保留、退避封顶、新事件保留和图片续传回归测试，并同步覆盖状态重置。
+- 验证：通知相关 28 项 `unittest` 全部通过；扩大到预警、通知、数据库、检测器、配置和迁移工具的 57 项离线测试全部通过；`python -m py_compile app.py` 与 `git diff --check` 通过。
+- 遗留：自动重试依赖实时摄像头流仍在运行；真实断网恢复和多群部分失败场景尚未做手机端集成测试。
+
+## 2026-08-07 21:58 - 生成单文件回迁压缩包
+
+- 任务：按用户要求把已验证的迁移目录进一步制作成便于搬运的单个压缩文件。
+- 改动：在 `迁移说明.md` 补充压缩包交接信息，将本条最终日志同步到迁移目录并刷新包外文件清单与逐文件 SHA-256 清单；使用支持大文件的 ZIP64 格式生成 `F:\多类隐患检测系统_迁移包_20260807.zip`，压缩包内同时包含完整项目目录、包说明清单和逐文件校验清单，并在同级生成压缩包 SHA-256 文件。
+- 验证：使用 Python 标准库完整读取 ZIP 中所有成员并执行 CRC 校验；核对压缩包包含项目目录和两个包外清单，随后再次确认源目录与包内仓库 HEAD、未提交状态和最终日志一致。
+- 遗留：压缩包仍含真实钉钉凭据和业务数据，只能私密传输；原始未压缩目录暂时保留，确认原电脑成功解压和运行后再决定是否删除。
+
+## 2026-08-07 21:27 - 完成回迁前最终扫描与打包
+
+- 任务：全面复核当前工作区改动、共享日志和迁移边界，生成可带回原电脑继续开发的最终状态包。
+- 改动：将 `PROJECT_LOG.md` 标题恢复到首行并把 73 条既有记录按时间倒序整理（历史正文保留不改写）；更新 `迁移说明.md` 的回迁交接信息；增强 `tools/make_portable.py`，排除覆盖率产物与 Git 临时对象，并把生成清单移到包外以保持包内 Git 状态不变；在 `tests/test_portable.py` 增加相应回归测试；生成完整迁移目录 `F:\多类隐患检测系统_迁移包_20260807\stystsyysy`、包外说明清单及逐文件 SHA-256 清单。
+- 验证：源仓库与迁移包分别运行 69 项 `unittest` 均通过；`run.bat --check`、Python 语法检查、`git diff --check`、源/目标 `git fsck --full --no-dangling` 与 `git lfs fsck` 均通过；源/目标 HEAD 均为 `1b1ed7c`，18 行未提交状态完全一致；迁移包共 37,930 个文件、约 5,136.5 MB，22 个关键路径齐全，主模型 SHA-256 一致且未发现任何约定排除项。
+- 遗留：迁移包含真实钉钉凭据、运行数据库、上传记录与业务数据，必须私密传输；目标电脑需双击 `setup.bat` 重建未打包的 `.venv`，约 18 GB 的 `data/material_library/hf_datasets/` 仍按可下载原始素材排除；11 条早期历史日志沿用旧格式，为避免编造事实未补写缺失字段。
+
+## 2026-08-04 00:21 - 建立自动化测试与覆盖率基线
+
+- 任务：按工作区代码结构审查现有测试覆盖率，补齐核心运行模块、Streamlit 启动/辅助逻辑和高风险数据工具的离线回归测试。
+- 改动：
+  - 新增 `tests/`，共 68 项标准库 `unittest`，覆盖检测器模型路径/回退/检测摘要、预警、SQLite 建表迁移与统计、钉钉配置/缓存/多群/图片/失败分支、Streamlit 非摄像头页面 smoke、实时统计与通知汇总、数据标签校验/预测框去重/迁移目标安全约束；测试使用依赖替身、临时目录并阻断真实钉钉网络。
+  - 新增 `.coveragerc` 与 `requirements-dev.txt`，`README.md` 补充测试和覆盖率命令，`.gitignore` 排除覆盖率产物。
+  - `app.py` 修复实时钉钉汇总遇到红色预警后提前退出的问题，确保同一汇总内的反光衣、口罩等后续违规类型不会丢失。
+- 验证：`.venv\Scripts\python.exe -m coverage run -m unittest discover -s tests -v` 通过（68/68）；分支覆盖率 `src/` 100%、`app.py + src/` 59%、全工作区活跃 Python 代码 35%；`py_compile app.py`、`run.bat --check`、`git diff --check` 均通过。
+- 遗留：摄像头/WebRTC 回调、视频上传/转码、真实图片上传推理以及多数一次性数据整理脚本仍需硬件或集成级测试；当前覆盖率分别为 `app.py` 37%、全工作区 35%。
 
 ## 2026-08-03 20:03 - 整理项目结构
 
@@ -55,6 +81,13 @@
   - `config/dingtalk.example.json`：更新为 A/B 双群示例（B 群 enabled=false 展示停用写法）。
 - 验证：`py_compile` 通过；临时配置测试——`list_webhooks` 返回全部群、`load_config` 仅返回启用群、全部停用时正确抛出「没有启用的机器人 webhook」；真实发送文字（test_dingtalk.py）、markdown、裁剪图均 errcode=0 送达默认群。
 - 遗留：app 界面开关未做（当前改配置 `enabled` 即可，无需重启）；如需在 Streamlit 侧边栏加群开关，待依赖环境就绪后再补。
+
+## 2026-08-03 16:20 - 确定钉钉正式通道：webhook#2，webhook#1 弃用
+
+- 任务：另一个群（webhook#1）机器人开启「自定义关键词」安全校验，尝试 报警/隐患/检测/通知/安全/告警 均返回 310000，用户确认不采用，正式通道定为 webhook#2。
+- 改动：无代码改动；`config/dingtalk.local.json` 的 `webhook` 字段维持指向 webhook#2（此前已配置）。
+- 验证：webhook#2 文字、markdown、图片（markdown 嵌入 media_id）均已实测 errcode=0；裁剪图推送链路（画框→120px 边距裁剪→上传→发送）模拟测试通过，裁剪图 `data/uploads/snapshots/crop_20260803_test_no-helmet.jpg` 已生成并成功推送。
+- 遗留：本机未安装 Python，模块级/app 级回归未跑，需在装有 Python 的机器上执行 `tools/test_dingtalk.py` 或 `run.bat` 触发一次违规做最终确认；后续如需换群，只改本地配置 `webhook` 字段。
 
 ## 2026-08-03 16:18 - 钉钉链路模块级回归通过（真实 Python）
 
@@ -144,9 +177,6 @@
 - 验证：编译通过；markdown文字推送用户确认收到；crop_*.jpg已生成；send_image待用户重启后确认errcode。
 - 遗留：robot/upload_media端点404，已回退base64；需查看日志确认send_image最终结果。
 
-# 项目共享日志
-
-
 ## 2026-07-29 20:00 - 建立合作方实地测试集：32张原始标注 + partner_model预标注
 
 - 任务：用 partner_model.pt 对32张合作方实拍自动预标注，建立独立测试集，供人工标注后用做基准评估。
@@ -197,6 +227,7 @@
   - 内部val=0.743 vs 黄金集=0.256，过拟合极严重
 - 结论：21.8M参数对2000张数据集严重过大。全模型对比：v4(3M/0.857) > v5(3M/0.795) > yolo26m_v2(21.8M/0.256) > yolo26m_v1(21.8M/0.178)
 - 遗留：v4仍是当前最佳模型；提升精度需域内人工标注NO-Mask/Safety Cone数据后基于v4轻量fine-tune；yolo26m系列可弃用。
+
 ## 2026-07-29 00:50 - yolo26m方向修正：用v4精选训练集重训
 
 - 任务：yolo26m_v1在混杂数据上黄金集mAP50仅0.178，严重过拟合。改用v4时代的1985张干净数据重训yolo26m_v2_clean，验证"大模型+精选数据"方向。
@@ -237,7 +268,6 @@
   - Production `models/best.pt` SHA-256 remains `2419700BBE3B8D38F9000655D9CF952A4BC93EF6C143BAF8B49A0ABDE5D0760F`.
 - Remaining: A user-operated webcam/video session is still needed to measure full-pipeline FPS/memory stability and validate real screenshot/DingTalk delivery; no runtime database, weights, screenshots, cache, or training output is staged for Git.
 
-
 ## 2026-07-28 14:53 - 交接：将YOLO26m候选可回滚接入比赛软件
 
 - 任务：用户决定由下一个对话完成YOLO26m候选模型的实际软件接入；本条记录给出完整实施需求、产物位置、风险、验收门槛和回滚方案。本对话不修改业务代码、不覆盖现有生产权重。
@@ -267,18 +297,21 @@
   - 运行Python编译、关键检测smoke test和 `git diff --check`；不提交运行数据库、权重、截图、缓存或训练产物。
 - 验证：本交接前已确认模型统一入口为 `src/detector.py:42-57`，`app.py` 三类检测流程共用同一HazardDetector；候选权重可加载，类别/任务/end-to-end属性正确；训练与两套评估报告分别位于 `runs/yolo26/candidate_5ep/`、`evaluation/results/yolo26m_5ep_gold/`、`evaluation/results/current_best_gold_recheck/`。
 - 遗留与风险：YOLO26m仅训练5 epochs，黄金集表现目前低于旧模型，尤其NO-Mask、Safety Cone和machinery迁移不足；本次切换只能视为默认试用+A/B验证，不能宣称精度升级。比赛稳定版本必须保留YOLOv8n快速回滚；双方复核数据合并后，应从候选权重继续训练30–50 epochs并重新做严格黄金集和长时间摄像头压测。
+
 ## 2026-07-28 14:03 - YOLO26m 五轮候选训练与黄金集评估
 
 - 任务：在不替换现有生产权重的前提下，验证最新 YOLO26m 能否在当前10类PPE数据集上正常训练、部署并形成后续升级候选。
 - 改动：下载 `yolo26m.pt` 预训练权重；先以5%数据跑1 epoch smoke test，再用净化后的4790张训练图、561张验证图运行5 epochs完整候选训练；产物保存到 `runs/yolo26/candidate_5ep/`，未修改 `models/best.pt` 或业务代码。
 - 验证：RTX 5060 8GB上 batch=8 峰值显存约4.83GB，训练和验证无OOM、坏图或标签错误；训练验证集最终 Precision约0.81、Recall约0.78、mAP50=0.853、mAP50-95=0.561，推理约7.7ms；独立40张黄金集为 Precision=0.459、Recall=0.292、mAP50=0.280、mAP50-95=0.128，推理约12.6ms。当前YOLOv8n同黄金集mAP50=0.487、mAP50-95=0.368、推理约3.2ms，但旧权重曾见过其中26张黄金图，结果仅作带泄漏参考。候选 `best.pt`/`last.pt` 各约42MB。
 - 遗留：5 epochs不足以让YOLO26m适应黄金集域分布，当前不得替换生产模型；后续应在复核数据合并后从候选权重继续训练30–50 epochs，再做严格独立评估和实时摄像头压测。
+
 ## 2026-07-28 11:57 - 多模态视觉复核15张扩展批次
 
 - 任务：在5张试验通过后扩大多模态辅助复核批次，处理本机88张任务中的另外15张，并继续遵守明确项修改、模糊项转人工终审的原则。
 - 改动：复核15张图片；11张动漫、收据广告、园艺工具、旅游景观等非PPE或无目标图片清空误标并保存为空标签负样本；测量员图片补充NO-Mask和Safety Vest候选框；4张多人遮挡或多塔吊场景保留现有/新增明确框并标记 `needs_manual_review`。同步更新 `.annotate_progress.json`。
 - 验证：本批11张完成、4张人工终审，15个标签文件的字段数、类别、0-1坐标、宽高和进度计数检查均通过，0个错误；总体进度14/88完成，6张待人工终审。
 - 遗留：待人工终审图片为 `98e50afff9e090c8`、`d7b203b0075e1d84`、`b41b39ad788eabb3`、`ade3c899bd925de4`，主要问题为遮挡人员及多个塔吊/大型机械漏框；其余68张尚未视觉复核。
+
 ## 2026-07-28 11:22 - 用户手动将项目目录改为英文名
 
 - 任务：记录用户本人完成的项目目录英文重命名，避免误归因到其他对话或自动化改动。
@@ -317,6 +350,7 @@
   - 本机标注服务切换到88张任务，地址保持 `http://localhost:8504`。
 - 验证：原队列322张、已完成12张、待拆分310张；拆分结果88+222=310且无交集；合作方便携包API返回222张/完成0张、HTTP 200；本机API返回88张/完成0张/初始564框、HTTP 200。
 - 遗留：等待双方完成复核并分别导出 `ppe_annotated.zip`，之后需将两份结果与原队列已完成的12张合并回统一训练数据集。
+
 ## 2026-07-27 23:30 - 合作方32张工地实拍完成预标注并整理为独立复核集
 
 - 任务：对 `partner_images` 中32张新工地实拍进行自动预标注，并整理为便于人工逐图复核的独立YOLO数据集。
@@ -331,6 +365,7 @@
   - `.annotate_progress.json` 共32项，全部为自动预标注且待复核；重复运行默认拒绝覆盖已有标签。
   - 标注服务API返回HTTP 200、32张图片、完成进度0/32；服务地址 `http://localhost:8504`。
 - 遗留：自动模型仅找到4个NO-Mask候选，人工复核时必须优先补画漏掉的NO-Mask，并删除误检框；复核完成前不得直接并入训练集。
+
 ## 2026-07-27 23:00 - 合作伙伴工地实拍图入库（32张，高清域内数据）
 
 - 任务：处理合作伙伴提供的工地实拍图，预处理并加入复核队列。
@@ -426,38 +461,6 @@
 - 验证：git status 确认所有源码级改动已暂存；数据/模型/构建产物不入库。
 - 遗留：整个提升模型精度的工作，移交新对话继续。
 
-## 2026-07-27 16:30 - v4模型：修复NO-Mask回归，mAP50升至0.857
-
-- 任务：v3模型NO-Mask暴跌（0.677→0.260），根因是AndrewMVD人脸裁剪集的NO-Mask标注风格与工地场景不匹配。剥离AndrewMVD的NO-Mask标签（806个），合并eval train（40张）+非val候选集（103张）的域内标签。
-- 改动：
-  - 剥离 data/training_dataset/labels/train/ 中AndrewMVD来源的NO-Mask（class 3）标签806个。
-  - 从 evaluation/datasets/ppe/labels/train/ 合并40张+从 
-ew_candidates/annotated/ 合并103张到训练集。
-  - 训练 models/ppe_v4.pt：2244张训练图，7702实例，50 epochs，mosaic=0。
-- 黄金验证集对比（40张/382目标）：
-  - Overall mAP50: 0.487(旧) → 0.674(v3) → 0.857(v4)，提升76%
-  - NO-Mask: 0.677(旧) → 0.260(v3) → 0.646(v4)，修复回归（P=1.0, R=0.04，不误报但漏检仍多）
-  - Safety Vest 0.995, machinery 0.993, NO-Hardhat 0.919——三个类接近完美
-  - Safety Cone 0.823，从死类到可用
-- 验证：evaluate_model.py 黄金集通过；models/ppe_v4.pt 已保存。
-- 遗留：Mask/vehicle验证集无实例仍无法评估；NO-Mask Recall仅0.04需更多域内标注数据。
-
-## 2026-07-27 15:00 - 新训练集首次训练完成，mAP50 从 0.487 提升至 0.674
-
-- 任务：用 data/training_dataset/（2,043 train + 496 val，10 类，7,757 实例）fine-tune 旧模型 50 epochs。
-- 改动：models/ppe_v3.pt 新模型（YOLOv8n，3M 参数）。训练参数：imgsz=640, batch=16, device=RTX 5060, mosaic=0(内存限制), workers=0。
-- 黄金验证集（40 张）对比结果：
-  - Overall mAP50: 0.487 → 0.674 (+38%)
-  - Safety Cone: 0.004 → 0.639（死类复活）
-  - NO-Hardhat: 0.497 → 0.773（+56%，Recall 从 0.29 升至 0.81）
-  - machinery: 0.424 → 0.775（+83%）
-  - Safety Vest: 0.638 → 0.972（+52%）
-  - NO-Mask: 0.677 → 0.260（-62%，P 从 0.92 暴跌至 0.31，疑似 AndrewMVD 数据集标注风格冲突）
-  - Mask/vehicle: 验证集无实例，仍无法评估
-- 验证：evaluate_model.py 在黄金集上产出逐类指标；新模型文件 models/ppe_v3.pt。
-- 遗留：NO-Mask 精度倒退需排查（AndrewMVD 标注风格 vs 验证集标注风格）；Mask/vehicle 待验证集补充实例后评估；训练配置（mosaic=0）非最优，后续环境稳定后可用完整增强重训。
-
-
 ## 2026-07-27 17:30 - 拆分训练集：全人工标注 2,656 张 + 待复核 117 张
 
 - 任务：将 117 张纯自动标注（未经人工复核）的图片从训练集移出，单独放入复核队列。
@@ -490,6 +493,22 @@ ew_candidates/annotated/ 合并103张到训练集。
   - 现在可重训：yolo train model=models/best.pt data=data/training_dataset/data.yaml epochs=100 imgsz=640
   - 训练完成后用 	ools/evaluate_model.py 对比精度
 
+## 2026-07-27 16:30 - v4模型：修复NO-Mask回归，mAP50升至0.857
+
+- 任务：v3模型NO-Mask暴跌（0.677→0.260），根因是AndrewMVD人脸裁剪集的NO-Mask标注风格与工地场景不匹配。剥离AndrewMVD的NO-Mask标签（806个），合并eval train（40张）+非val候选集（103张）的域内标签。
+- 改动：
+  - 剥离 data/training_dataset/labels/train/ 中AndrewMVD来源的NO-Mask（class 3）标签806个。
+  - 从 evaluation/datasets/ppe/labels/train/ 合并40张+从
+ew_candidates/annotated/ 合并103张到训练集。
+  - 训练 models/ppe_v4.pt：2244张训练图，7702实例，50 epochs，mosaic=0。
+- 黄金验证集对比（40张/382目标）：
+  - Overall mAP50: 0.487(旧) → 0.674(v3) → 0.857(v4)，提升76%
+  - NO-Mask: 0.677(旧) → 0.260(v3) → 0.646(v4)，修复回归（P=1.0, R=0.04，不误报但漏检仍多）
+  - Safety Vest 0.995, machinery 0.993, NO-Hardhat 0.919——三个类接近完美
+  - Safety Cone 0.823，从死类到可用
+- 验证：evaluate_model.py 黄金集通过；models/ppe_v4.pt 已保存。
+- 遗留：Mask/vehicle验证集无实例仍无法评估；NO-Mask Recall仅0.04需更多域内标注数据。
+
 ## 2026-07-27 16:00 - 补充 Safety Cone/machinery/vehicle 并合并人工复核标注
 
 - 任务：补全其他对话要求的冷门类图片，合并另一个对话完成的人工复核标注。
@@ -507,6 +526,21 @@ ew_candidates/annotated/
 - 遗留：
   - Safety Cone(12)、vehicle(4)、machinery(48) 实例仍偏少，后续可继续补充
   - 可在此数据集上重训模型：yolo train model=models/best.pt data=data/training_dataset/data.yaml epochs=100 imgsz=640
+
+## 2026-07-27 15:00 - 新训练集首次训练完成，mAP50 从 0.487 提升至 0.674
+
+- 任务：用 data/training_dataset/（2,043 train + 496 val，10 类，7,757 实例）fine-tune 旧模型 50 epochs。
+- 改动：models/ppe_v3.pt 新模型（YOLOv8n，3M 参数）。训练参数：imgsz=640, batch=16, device=RTX 5060, mosaic=0(内存限制), workers=0。
+- 黄金验证集（40 张）对比结果：
+  - Overall mAP50: 0.487 → 0.674 (+38%)
+  - Safety Cone: 0.004 → 0.639（死类复活）
+  - NO-Hardhat: 0.497 → 0.773（+56%，Recall 从 0.29 升至 0.81）
+  - machinery: 0.424 → 0.775（+83%）
+  - Safety Vest: 0.638 → 0.972（+52%）
+  - NO-Mask: 0.677 → 0.260（-62%，P 从 0.92 暴跌至 0.31，疑似 AndrewMVD 数据集标注风格冲突）
+  - Mask/vehicle: 验证集无实例，仍无法评估
+- 验证：evaluate_model.py 在黄金集上产出逐类指标；新模型文件 models/ppe_v3.pt。
+- 遗留：NO-Mask 精度倒退需排查（AndrewMVD 标注风格 vs 验证集标注风格）；Mask/vehicle 待验证集补充实例后评估；训练配置（mosaic=0）非最优，后续环境稳定后可用完整增强重训。
 
 ## 2026-07-27 14:15 - 发现新训练集并分析类别分布
 
@@ -560,7 +594,6 @@ ew_candidates/annotated/
   - 更新 `data.yaml`：train 指向 `images/train`，val 保持 `images/val`。
 - 验证：`evaluate_model.py --check-only` 通过（40 images, 382 labeled objects）；评估完成生成 metrics.json 及 Ultralytics 图表。
 - 遗留：原始训练数据在 Colab（custom_colab.yaml），需将 train 目录数据合并到原始训练集后重新训练；Safety Cone（0 检出）、Mask/vehicle（0 实例）类别需补图。
-
 
 ## 2026-07-27 10:00 - 构建统一训练集，口罩标注从 1 增至 3,363
 
@@ -643,7 +676,6 @@ un_annotate.bat 后验证 SAVE 保存并正确返回当前图片。
 un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
 本文件是所有项目对话共用的工作记录。开始任务前先阅读，完成改动后按 `AGENTS.md` 的格式在顶部追加记录。
 
-
 ## 2026-07-26 22:46 - 替换标注工具：labelImg 弃用，改用 Streamlit 网页标注
 
 - 任务：labelImg 1.8.6 + PyQt5 5.15.11 存在 C++ 崩溃（按 W 键即 segfault），降级 PyQt5 导致 labelImg 无法导入，改为浏览器端标注方案。
@@ -664,6 +696,18 @@ un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
 - 改动：将 `_send_realtime_violations(rt_stats, proj, insp)` 从 12 dots 改为 16 dots,使其正确位于 `if to_record:` 块内,与 `proj`/`insp` 赋值同级。同时清理日志中空标题行和重复孤儿条目。
 - 验证：Python 编译通过；缩进已确认在 16 dots；`proj`/`insp` 引用在作用域内。
 - 遗留：需重启服务后用摄像头实测验证钉钉通知链路；`_send_realtime_violations` 函数定义在第 196 行可后续清理。
+
+## 2026-07-26 20:45 - 清理临时文件并整理仓库
+
+- 任务：删除临时补丁脚本和字节码缓存，将未跟踪的模块和工具文件纳入版本管理，排除素材库中的大型数据目录。
+- 改动：
+  - 删除：_p5.py、_p7.py、_p8.py、_patch_realtime.py、_plog.py、_fix.py、_log2.py、_logfix2.py、_logfix3.py（一次性补丁脚本）；根目录/src/tools 下 __pycache__/；data/material_library/new_candidates/bing_* 临时下载目录。
+  - 入库：config/dingtalk.example.json、src/dingtalk.py、tools/（全部工具脚本）、run_label_tool.bat、run_review_tool.bat、evaluation/README.md、evaluation/datasets/ppe/data.yaml、.gitkeep。
+  - 入库：data/material_library/ 中的元数据（inventory.json、data.yaml、review_progress.json）、标注标签（labels/*.txt）、采集脚本（scripts/）、复核结果（review/）。
+  - .gitignore 新增排除：data/material_library/extracted/、source_archives/、raw/、new_candidates/raw/、new_candidates/annotated/*.jpg、annotated/images/。
+- 验证：git status 干净，111 个文件入暂存区；排除后素材库磁盘体积保留约 260 MB 不入库。
+- 遗留：无。
+
 ## 2026-07-26 20:29 - 补记图片检测钉钉通知接入
 
 - 任务：上传图片检测发现红色/黄色预警后，自动向钉钉发送汇总通知。
@@ -678,25 +722,12 @@ un_annotate.bat 后验证 SAVE 不再触发嵌套加载。
 - 验证：编译通过；proj/insp 在作用域内。
 - 遗留：需重启服务后用摄像头实测。
 
-
 ## 2026-07-26 20:14 - 接入实时摄像头检测钉钉通知
 
 - 任务：让实时摄像头检测在发现违规后，以 60 秒节流向钉钉发送汇总预警。
 - 改动：新增 DINGTALK_REALTIME_COOLDOWN 常量；新增 _send_realtime_violations() 通知函数；在 rt_stats 新增通知状态字段并接入重置链路；在 video_frame_callback 违规去重后累加并在入库后调用通知。
 - 验证：Python 编译通过；通知函数与图片检测共用 dingtalk 模块和密钥配置；仅当 _HAS_DINGTALK 为 True 且累积有违规时才发送；60 秒节流避免手机轰炸。
 - 遗留：需启动实时摄像头检测功能验证手机端实际收信效果；后续可增加预留通知间隙配置和钉钉 Markdown 消息格式。
-
-
-## 2026-07-26 20:45 - 清理临时文件并整理仓库
-
-- 任务：删除临时补丁脚本和字节码缓存，将未跟踪的模块和工具文件纳入版本管理，排除素材库中的大型数据目录。
-- 改动：
-  - 删除：_p5.py、_p7.py、_p8.py、_patch_realtime.py、_plog.py、_fix.py、_log2.py、_logfix2.py、_logfix3.py（一次性补丁脚本）；根目录/src/tools 下 __pycache__/；data/material_library/new_candidates/bing_* 临时下载目录。
-  - 入库：config/dingtalk.example.json、src/dingtalk.py、tools/（全部工具脚本）、run_label_tool.bat、run_review_tool.bat、evaluation/README.md、evaluation/datasets/ppe/data.yaml、.gitkeep。
-  - 入库：data/material_library/ 中的元数据（inventory.json、data.yaml、review_progress.json）、标注标签（labels/*.txt）、采集脚本（scripts/）、复核结果（review/）。
-  - .gitignore 新增排除：data/material_library/extracted/、source_archives/、raw/、new_candidates/raw/、new_candidates/annotated/*.jpg、annotated/images/。
-- 验证：git status 干净，111 个文件入暂存区；排除后素材库磁盘体积保留约 260 MB 不入库。
-- 遗留：无。
 
 ## 2026-07-26 15:30 - 完成自动标注 + 复核工具替代纯手动标注
 

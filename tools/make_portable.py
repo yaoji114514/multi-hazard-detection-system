@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 ALWAYS_EXCLUDE = {
     ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    ".idea", ".vscode",
+    ".coverage", "htmlcov", ".idea", ".vscode",
 }
 ALWAYS_EXCLUDE_SUFFIX = {".pyc", ".pyo", ".pyd"}
 
@@ -36,13 +36,44 @@ def _ignore(src, names):
         if name in ALWAYS_EXCLUDE:
             ignored.add(name)
             continue
+        if name.startswith(".coverage."):
+            ignored.add(name)
+            continue
         if p.suffix.lower() in ALWAYS_EXCLUDE_SUFFIX:
             ignored.add(name)
             continue
         if src_path == (PROJECT_ROOT / ".git" / "lfs").resolve() and name == "tmp":
             ignored.add(name)
             continue
+        if src_path == (PROJECT_ROOT / ".git").resolve() and name.startswith("tmp_obj_"):
+            ignored.add(name)
+            continue
     return ignored
+
+
+def _manifest_path(target):
+    """Keep the generated manifest outside the copied Git working tree."""
+    return target.parent / f"{target.name}_package_manifest.txt"
+
+
+def _write_manifest(target):
+    """Write package metrics beside the copied Git working tree."""
+    files = [p for p in target.rglob("*") if p.is_file()]
+    total = sum(f.stat().st_size for f in files)
+    manifest = _manifest_path(target)
+    manifest.write_text(
+        "\n".join([
+            f"生成时间: {datetime.now().isoformat(timespec='seconds')}",
+            f"源项目: {PROJECT_ROOT}",
+            f"目标目录: {target}",
+            f"文件数: {len(files)}",
+            f"总大小: {total / 1024 / 1024:.1f} MB",
+            "",
+            "已排除: .venv / __pycache__ / *.pyc / .coverage* / htmlcov / .git/tmp_obj_* / .git/lfs/tmp / data/material_library/hf_datasets",
+        ]),
+        encoding="utf-8",
+    )
+    return manifest, len(files), total
 
 
 def main():
@@ -64,21 +95,8 @@ def main():
     target.mkdir(parents=True, exist_ok=True)
     shutil.copytree(PROJECT_ROOT, target, ignore=_ignore, dirs_exist_ok=True, copy_function=shutil.copy2)
 
-    files = [p for p in target.rglob("*") if p.is_file()]
-    total = sum(f.stat().st_size for f in files if f.is_file())
-    manifest = target / "package_manifest.txt"
-    manifest.write_text(
-        "\n".join([
-            f"生成时间: {datetime.now().isoformat(timespec='seconds')}",
-            f"源项目: {PROJECT_ROOT}",
-            f"文件数: {len(files)}",
-            f"总大小: {total / 1024 / 1024:.1f} MB",
-            "",
-            "已排除: .venv / __pycache__ / *.pyc / .git/lfs/tmp / data/material_library/hf_datasets",
-        ]),
-        encoding="utf-8",
-    )
-    print(f"完成: {len(files)} 个文件, {total / 1024 / 1024:.1f} MB")
+    manifest, file_count, total = _write_manifest(target)
+    print(f"完成: {file_count} 个文件, {total / 1024 / 1024:.1f} MB")
     print(f"清单: {manifest}")
 
 

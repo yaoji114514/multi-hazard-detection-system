@@ -10,7 +10,12 @@
 ultralytics>=8.0.0
 
 # --- Web 界面 ---
-streamlit>=1.30.0
+streamlit>=1.52.0
+
+# --- V3 本地 API 与独立前端托管 ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.20
 
 # --- 实时视频流(实时检测功能需要,WebRTC 推流,UI 不阻塞) ---
 streamlit-webrtc>=0.47.0

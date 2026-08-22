@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-22T11:25:00+08:00",
+  "title": "Design System: 现场安全签派台",
+  "extensions": {
+    "colorMeta": {
+      "daylight-paper": {
+        "role": "neutral",
+        "displayName": "Daylight Paper",
+        "canonical": "#EDF0F2",
+        "tonalRamp": ["#202326", "#3C4145", "#596066", "#7B8389", "#A0A7AC", "#C2C8CC", "#DFE3E6", "#F8F9F9"]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#171B20",
+        "tonalRamp": ["#111417", "#171B20", "#262C32", "#414950", "#68727A", "#929AA0", "#C0C5C8", "#ECEEEF"]
+      },
+      "action-cobalt": {
+        "role": "primary",
+        "displayName": "Action Cobalt",
+        "canonical": "#075BBE",
+        "tonalRamp": ["#031C3A", "#06356D", "#064B9D", "#075BBE", "#3B7FD0", "#72A5DF", "#AECBED", "#E7F0FA"]
+      },
+      "risk-red": {
+        "role": "secondary",
+        "displayName": "Risk Red",
+        "canonical": "#B72A22",
+        "tonalRamp": ["#3B0D0A", "#691712", "#922019", "#B72A22", "#D45B54", "#E38F8A", "#EFC3C0", "#F9EDEC"]
+      },
+      "risk-yellow": {
+        "role": "secondary",
+        "displayName": "Risk Yellow",
+        "canonical": "#925800",
+        "tonalRamp": ["#332000", "#593500", "#754700", "#925800", "#B57A21", "#D19E50", "#E6C48D", "#F7ECD6"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Task Display",
+        "purpose": "页面任务标题与主工作区标题。"
+      },
+      "body": {
+        "displayName": "Operational Body",
+        "purpose": "表单、恢复说明与日常操作文本。"
+      },
+      "label": {
+        "displayName": "Evidence Label",
+        "purpose": "字段、状态、来源和时间标签。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "evidence-lift",
+        "value": "0 12px 30px rgba(44, 55, 64, 0.16)",
+        "purpose": "将主证据舞台从日光纸面中分离。"
+      },
+      {
+        "name": "sheet-lift",
+        "value": "0 10px 24px rgba(44, 55, 64, 0.11)",
+        "purpose": "签派条和处置单的低幅纸面层级。"
+      },
+      {
+        "name": "drawer-lift",
+        "value": "-16px 0 40px rgba(21, 27, 32, 0.20)",
+        "purpose": "通知抽屉与被遮罩页面分离。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "160ms ease",
+        "purpose": "按钮、导航和输入状态反馈。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "1ms",
+        "purpose": "prefers-reduced-motion 下关闭非必要过渡。"
+      }
+    ],
+    "breakpoints": [
+      { "name": "wide", "value": "1420px" },
+      { "name": "compact-desktop", "value": "1120px" },
+      { "name": "stack", "value": "920px" },
+      { "name": "mobile", "value": "700px" },
+      { "name": "narrow-mobile", "value": "420px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "任务区域唯一的主要执行动作。",
+      "html": "<button class=\"ds-btn-primary\">开始检测</button>",
+      "css": ".ds-btn-primary { min-height:44px; padding:10px 16px; border:1px solid #075BBE; border-radius:4px; background:#075BBE; color:#F8F9F9; font:700 15px 'Microsoft YaHei UI', sans-serif; cursor:pointer; transition:background-color 160ms ease, transform 120ms ease; } .ds-btn-primary:hover { background:#064B9D; } .ds-btn-primary:active { transform:translateY(1px); } .ds-btn-primary:focus-visible { outline:none; box-shadow:0 0 0 3px #EDF0F2, 0 0 0 5px #075BBE; }"
+    },
+    {
+      "name": "Operational Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "项目、检查人和处置字段的标准输入。",
+      "html": "<label class=\"ds-field\"><span>检查人</span><input placeholder=\"填写姓名\"></label>",
+      "css": ".ds-field { display:grid; gap:6px; color:#171B20; font:700 12px 'Microsoft YaHei UI', sans-serif; } .ds-field input { min-height:44px; padding:10px 12px; border:1px solid #AEB5BB; border-radius:4px; background:#F8F9F9; color:#171B20; font:400 14px 'Microsoft YaHei UI', sans-serif; } .ds-field input::placeholder { color:#626B73; } .ds-field input:focus-visible { outline:none; box-shadow:0 0 0 3px #EDF0F2, 0 0 0 5px #075BBE; }"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "description": "顶部五能力导航的当前状态。",
+      "html": "<button class=\"ds-nav-active\">隐患检测</button>",
+      "css": ".ds-nav-active { position:relative; min-height:64px; padding:0 18px; border:0; background:#E8EDF3; color:#064B9D; font:700 14px 'Microsoft YaHei UI', sans-serif; } .ds-nav-active::after { position:absolute; right:14px; bottom:0; left:14px; height:4px; background:#075BBE; content:''; } .ds-nav-active:focus-visible { outline:none; box-shadow:inset 0 0 0 2px #075BBE; }"
+    },
+    {
+      "name": "Yellow Risk Mark",
+      "kind": "chip",
+      "description": "限时整改风险的文字与颜色联合标记。",
+      "html": "<span class=\"ds-risk-yellow\">黄色风险</span>",
+      "css": ".ds-risk-yellow { display:inline-flex; align-items:center; min-height:28px; padding:4px 9px; border:1px solid #C6A462; border-radius:4px; background:#F5EDDC; color:#925800; font:800 12px 'Microsoft YaHei UI', sans-serif; }"
+    },
+    {
+      "name": "Dispatch Sheet",
+      "kind": "custom",
+      "refersTo": "dispatch-sheet",
+      "description": "上下文、准备状态与主动作共用的现场签派条。",
+      "html": "<section class=\"ds-dispatch\"><h2>检测命令</h2><p>确认上下文和证据后再执行</p><dl><dt>项目</dt><dd>一号施工区</dd></dl><button>开始检测</button></section>",
+      "css": ".ds-dispatch { display:flex; flex-direction:column; width:320px; min-height:420px; padding:22px; border:1px solid #727C85; border-top:5px solid #171B20; border-radius:4px; background:#F8F9F9; color:#171B20; font-family:'Microsoft YaHei UI', sans-serif; box-shadow:0 10px 24px rgba(44,55,64,.11); } .ds-dispatch h2 { margin:0; font-size:20px; } .ds-dispatch p { margin:5px 0 20px; color:#5E6871; font-size:12px; } .ds-dispatch dl { display:grid; grid-template-columns:64px 1fr; gap:12px; padding:12px 0; border-top:1px solid #AEB5BB; } .ds-dispatch dt { color:#5E6871; font-size:12px; } .ds-dispatch dd { margin:0; font-size:14px; font-weight:700; } .ds-dispatch button { min-height:54px; margin-top:auto; border:1px solid #075BBE; border-radius:4px; background:#075BBE; color:#F8F9F9; font-size:18px; font-weight:800; } .ds-dispatch button:hover { background:#064B9D; } .ds-dispatch button:focus-visible { outline:none; box-shadow:0 0 0 3px #EDF0F2,0 0 0 5px #075BBE; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "安全影像校样台与现场签派条",
+    "overview": "界面像一张在日光环境中展开的工程影像校样台。真实现场照片是产品的主材料，石墨色证据舞台负责聚焦，右侧浅色签派条把项目、检查人、准备状态和下一步动作收拢到同一视线内。视觉冲击来自证据比例与操作结构，不来自装饰性工业拟物。\n\n这是高密度 Operate 系统。熟悉的按钮、表单、顶部导航和状态语言保持直接；个性来自联系表、处置单、黑色校样框和克制的印刷式规则线。系统拒绝旧版深色侧栏后台，也拒绝通用白色卡片墙。",
+    "keyCharacteristics": [
+      "现场影像始终比统计数字和技术配置更醒目。",
+      "日光银灰和石墨形成主世界，钴蓝只用于操作与当前选择。",
+      "红色、黄色只表达真实业务风险，并始终配合文字说明。",
+      "页面以大舞台、签派条、联系表和处置单组织，不堆叠同尺寸卡片。",
+      "动效只用于状态反馈、证据切换和抽屉过渡，并尊重减少动态效果设置。"
+    ],
+    "rules": [
+      { "name": "The Semantic Signal Rule", "body": "钴蓝表示操作，红黄表示业务风险。监测状态、系统故障和普通选择不能借用红黄风险色。", "section": "colors" },
+      { "name": "The Text Plus Color Rule", "body": "每个风险颜色旁必须有中文等级、当前事实或下一步动作。", "section": "colors" },
+      { "name": "The Working Type Rule", "body": "标题靠字重和位置建立层级，不使用渐变文字、装饰斜体或巨大海报字号。", "section": "typography" },
+      { "name": "The Evidence First Rule", "body": "页面层级先呈现真实影像与当前动作，再呈现统计、技术参数和历史明细。", "section": "layout" },
+      { "name": "The Flat By Default Rule", "body": "没有真实层级关系的内容使用留白或规则线，不使用阴影卡片。", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 让真实证据占据页面最大视觉面积，并让主要动作贴近证据。",
+      "Do 复用顶部导航、证据舞台、签派条、联系表和处置单这一套语言。",
+      "Do 将监测状态、业务风险、存储错误和通知恢复分别说明。",
+      "Do 在移动端保持上下文、证据、动作、明细的任务顺序。",
+      "Do 使用原生语义控件、44px 操作高度、可见焦点和减少动态效果回退。"
+    ],
+    "donts": [
+      "Don't 恢复深色侧栏、四格状态轨或同尺寸统计卡片墙。",
+      "Don't 使用渐变、玻璃拟态、霓虹发光、装饰铆钉、警戒条纹或表情符号。",
+      "Don't 用红黄表示导航、普通按钮、摄像头连接或系统错误。",
+      "Don't 用模型文件名、帧计数和技术参数挤占第一视口。",
+      "Don't 把视频逐帧累计描述为独立人员或处置事件。"
+    ]
+  }
+}

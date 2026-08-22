@@ -1,2 +1,3 @@
-# 开发期覆盖率测量；自动化测试本身仅使用标准库 unittest。
+# 开发期覆盖率与 FastAPI HTTP 契约测试。
 coverage>=7.15,<8
+httpx2>=2.12,<3

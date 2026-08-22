@@ -5,7 +5,8 @@
     {
       "name": "示例群A",
       "webhook": "https://oapi.dingtalk.com/robot/send?access_token=群A的webhooktoken",
-      "enabled": true
+      "enabled": true,
+      "open_conversation_id": "可选：在钉钉端选群后获得的会话ID"
     },
     {
       "name": "示例群B",

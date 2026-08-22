@@ -44,6 +44,32 @@ class _Coordinates:
 
 
 class HazardDetectorTests(unittest.TestCase):
+    def test_select_compute_device_prefers_cuda_then_mps_then_cpu(self):
+        with mock.patch.object(
+            detector_module.torch.cuda, "is_available", return_value=True
+        ):
+            self.assertEqual(0, detector_module.select_compute_device())
+
+        mps_backend = types.SimpleNamespace(is_available=mock.Mock(return_value=True))
+        with mock.patch.object(
+            detector_module.torch.cuda, "is_available", return_value=False
+        ):
+            with mock.patch.object(
+                detector_module.torch,
+                "backends",
+                types.SimpleNamespace(mps=mps_backend),
+                create=True,
+            ):
+                self.assertEqual("mps", detector_module.select_compute_device())
+
+            with mock.patch.object(
+                detector_module.torch,
+                "backends",
+                types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False)),
+                create=True,
+            ):
+                self.assertEqual("cpu", detector_module.select_compute_device())
+
     def test_resolve_model_path_accepts_only_local_pt_filename(self):
         with TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir)

@@ -10,6 +10,17 @@ import torch
 from ultralytics import YOLO
 
 
+def select_compute_device():
+    """Return the best supported Ultralytics inference device for this host."""
+    if torch.cuda.is_available():
+        return 0
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    mps_available = getattr(mps_backend, "is_available", None)
+    if callable(mps_available) and mps_available():
+        return "mps"
+    return "cpu"
+
+
 class HazardDetector:
     """多类隐患检测器(PPE检测)"""
 
@@ -123,7 +134,7 @@ class HazardDetector:
         """
         检测图片中的隐患,返回检测结果、预警信息和统计摘要
         """
-        device = 0 if torch.cuda.is_available() else "cpu"
+        device = select_compute_device()
         results = self.model(image_path, conf=conf, device=device)
 
         detections = []

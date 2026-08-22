@@ -29,6 +29,9 @@ class _FakeUI:
     def checkbox(self, label, value=False, **kwargs):
         return value
 
+    def toggle(self, label, value=False, **kwargs):
+        return value
+
     def file_uploader(self, *args, **kwargs):
         return None
 
@@ -110,7 +113,9 @@ def _load_app_module():
     modules = {
         "streamlit": fake_streamlit,
         "torch": fake_torch,
-        "detector": _module("detector", HazardDetector=_FakeDetector),
+        "detector": _module(
+            "detector", HazardDetector=_FakeDetector, select_compute_device=lambda: "cpu"
+        ),
         "database": _module("database", Database=_FakeDatabase),
         "alert": _module("alert", AlertEngine=_FakeAlertEngine),
         "dingtalk": fake_dingtalk,
@@ -128,6 +133,145 @@ def _load_app_module():
 
 
 app, fake_streamlit, fake_dingtalk = _load_app_module()
+
+
+class FrontendRiskHelperTests(unittest.TestCase):
+    def test_image_fingerprint_changes_with_content_or_model(self):
+        first = app._image_fingerprint(b"image-a", "model-v1")
+        self.assertEqual(first, app._image_fingerprint(b"image-a", "model-v1"))
+        self.assertNotEqual(first, app._image_fingerprint(b"image-b", "model-v1"))
+        self.assertNotEqual(first, app._image_fingerprint(b"image-a", "model-v2"))
+
+    def test_dingtalk_name_confirmation_flags_ambiguous_placeholders(self):
+        self.assertTrue(app._dingtalk_name_needs_confirmation("默认群"))
+        self.assertTrue(app._dingtalk_name_needs_confirmation("群 2"))
+        self.assertFalse(app._dingtalk_name_needs_confirmation("五建项目安全巡检群"))
+
+    def test_dingtalk_identity_session_key_hides_and_separates_bindings(self):
+        first = app._dingtalk_identity_session_key("ABCD1234", "cid-one")
+        second = app._dingtalk_identity_session_key("ABCD1234", "cid-two")
+
+        self.assertNotIn("cid-one", first)
+        self.assertNotIn("cid-two", second)
+        self.assertNotEqual(first, second)
+
+    def test_last_check_context_restores_once_and_saves_input_changes(self):
+        fake_streamlit.session_state.clear()
+        database = mock.Mock()
+        database.get_last_check_context.return_value = {
+            "project_name": "南区项目",
+            "inspector": "李四",
+        }
+        with mock.patch.object(app, "get_database", return_value=database):
+            app._restore_last_check_context()
+            app._restore_last_check_context()
+            app._save_last_check_context()
+
+        self.assertEqual(fake_streamlit.session_state[app._PROJECT_CONTEXT_KEY], "南区项目")
+        self.assertEqual(fake_streamlit.session_state[app._INSPECTOR_CONTEXT_KEY], "李四")
+        database.get_last_check_context.assert_called_once_with()
+        database.save_last_check_context.assert_called_once_with("南区项目", "李四")
+
+    def test_record_risk_prioritizes_red_then_yellow(self):
+        self.assertEqual(app._record_risk({"red_alerts": 1, "yellow_alerts": 2}), "red")
+        self.assertEqual(app._record_risk({"no_vest_count": 1}), "yellow")
+        self.assertEqual(app._record_risk({"level": "red"}), "red")
+        self.assertEqual(app._record_risk({}), "blue")
+
+    def test_safe_json_list_degrades_invalid_or_non_list_values(self):
+        self.assertEqual(app._safe_json_list('[{"id": 1}]'), [{"id": 1}])
+        self.assertEqual(app._safe_json_list('{"id": 1}'), [])
+        self.assertEqual(app._safe_json_list("not-json"), [])
+        self.assertEqual(app._safe_json_list(None), [])
+
+    def test_realtime_ui_state_separates_monitor_risk_and_system_error(self):
+        idle = app._realtime_ui_state(
+            {"violations": 0, "violation_classes": {}, "last_error": None},
+            False,
+        )
+        self.assertEqual(idle["monitor"][0], "尚未启动监测")
+        self.assertEqual(idle["risk"][0], "neutral")
+
+        safe = app._realtime_ui_state(
+            {"violations": 0, "violation_classes": {}, "last_error": None},
+            True,
+        )
+        self.assertEqual(safe["monitor"][0], "监测运行中")
+        self.assertEqual(safe["risk"][0], "blue")
+
+        red_with_error = app._realtime_ui_state(
+            {
+                "violations": 2,
+                "violation_classes": {"no-helmet": 1, "no-vest": 1},
+                "last_error": "camera failed",
+            },
+            True,
+        )
+        self.assertEqual(red_with_error["risk"][0], "red")
+        self.assertEqual(red_with_error["system"][2], "error")
+
+        yellow = app._realtime_ui_state(
+            {"violations": 1, "violation_classes": {"no-vest": 1}, "last_error": None},
+            True,
+        )
+        self.assertEqual(yellow["risk"][0], "yellow")
+
+    def test_queue_quick_views_keep_open_work_visible(self):
+        now = __import__("datetime").datetime(2026, 8, 13, 12, 0, 0)
+        records = [
+            {"incident_status": "pending", "assignee": "", "level": "red", "due_at": "2026-08-12 23:59:59"},
+            {"incident_status": "in_progress", "assignee": "张三", "level": "yellow", "due_at": "2026-08-14 23:59:59"},
+            {"incident_status": "closed", "assignee": "张三", "level": "red", "due_at": "2026-08-11 23:59:59"},
+        ]
+        self.assertEqual([app._queue_matches_quick_view(r, "open", "张三", now) for r in records], [True, True, False])
+        self.assertEqual([app._queue_matches_quick_view(r, "in_progress", "张三", now) for r in records], [False, True, False])
+        self.assertEqual([app._queue_matches_quick_view(r, "mine", "张三", now) for r in records], [False, True, False])
+        self.assertEqual([app._queue_matches_quick_view(r, "unassigned", "张三", now) for r in records], [True, False, False])
+        self.assertEqual([app._queue_matches_quick_view(r, "red", "张三", now) for r in records], [True, False, False])
+        self.assertEqual([app._queue_matches_quick_view(r, "overdue", "张三", now) for r in records], [True, False, False])
+
+    def test_request_incident_focus_sets_pending_route(self):
+        fake_streamlit.session_state.clear()
+        app._request_incident_focus("image", 12)
+        self.assertEqual(fake_streamlit.session_state["_requested_page"], "检测记录")
+        self.assertEqual(fake_streamlit.session_state["_requested_queue_view"], "all")
+        self.assertEqual(fake_streamlit.session_state["_incident_focus_source"], "image")
+        self.assertEqual(fake_streamlit.session_state["_incident_focus_id"], 12)
+        self.assertEqual(fake_streamlit.session_state["incident_queue_keyword"], "")
+        self.assertEqual(fake_streamlit.session_state["incident_queue_risk"], "all")
+
+    def test_realtime_storage_count_changes_only_after_success(self):
+        rt_stats = app.get_rt_stats()
+        app._reset_rt_stats()
+        failing_db = mock.Mock()
+        failing_db.save_realtime_violation.side_effect = RuntimeError("disk full")
+
+        self.assertIsNone(
+            app._save_realtime_incident(
+                failing_db,
+                rt_stats,
+                violation_type="no-helmet",
+                violation_count=1,
+            )
+        )
+        self.assertEqual(rt_stats["realtime_record_count"], 0)
+        self.assertIsNone(rt_stats["last_realtime_record_id"])
+        self.assertIn("disk full", rt_stats["last_storage_error"])
+
+        healthy_db = mock.Mock()
+        healthy_db.save_realtime_violation.return_value = 27
+        self.assertEqual(
+            app._save_realtime_incident(
+                healthy_db,
+                rt_stats,
+                violation_type="no-helmet",
+                violation_count=1,
+            ),
+            27,
+        )
+        self.assertEqual(rt_stats["realtime_record_count"], 1)
+        self.assertEqual(rt_stats["last_realtime_record_id"], 27)
+        self.assertIn("disk full", rt_stats["last_storage_error"])
 
 
 class RealtimeStatsTests(unittest.TestCase):
@@ -203,8 +347,8 @@ class NotificationHelperTests(unittest.TestCase):
             {"level": "red", "hazard_type": "未戴安全帽", "action": "立即停工"},
             {"level": "red", "hazard_type": "未戴安全帽", "action": "立即停工"},
         ]
-        with mock.patch.object(app, "send_text") as send_text:
-            app._send_image_alert(
+        with mock.patch.object(app, "send_text", return_value=[("A群", {"errcode": 0})]) as send_text:
+            result = app._send_image_alert(
                 alerts,
                 record_id=12,
                 image_path="unused.jpg",
@@ -219,15 +363,17 @@ class NotificationHelperTests(unittest.TestCase):
         self.assertIn("未穿反光衣 x 1", message)
         self.assertIn("未戴安全帽 x 2", message)
         self.assertIn("处理建议：立即停工", message)
+        self.assertEqual(result, {"status": "sent", "sent_count": 1})
 
     def test_image_alert_reports_send_failure_without_raising(self):
         alert = {"level": "red", "hazard_type": "未戴安全帽", "action": "停工"}
         with mock.patch.object(app, "send_text", side_effect=RuntimeError("offline")):
             with mock.patch.object(app.st, "caption") as caption:
-                app._send_image_alert([alert], 1, "unused.jpg")
+                result = app._send_image_alert([alert], 1, "unused.jpg")
 
         caption.assert_called_once()
         self.assertIn("offline", caption.call_args.args[0])
+        self.assertEqual(result["status"], "failed")
 
     def test_realtime_notification_keeps_every_type_and_clears_pending(self):
         rt_stats = app.get_rt_stats()

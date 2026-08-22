@@ -1,9 +1,10 @@
 import json
+import socket
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from src import dingtalk
 
@@ -37,9 +38,11 @@ class DingTalkTestCase(unittest.TestCase):
         self.addCleanup(self._urlopen_patch.stop)
         self.urlopen.side_effect = AssertionError("unexpected real network request")
         self._reset_token_cache()
+        dingtalk.clear_group_identity_cache()
 
     def tearDown(self):
         self._reset_token_cache()
+        dingtalk.clear_group_identity_cache()
 
     @staticmethod
     def _reset_token_cache():
@@ -118,9 +121,38 @@ class ConfigTests(DingTalkTestCase):
 
         self.assertEqual(["on-a", "off-b"], [item["name"] for item in webhooks])
         self.assertEqual([True, False], [item["enabled"] for item in webhooks])
+        self.assertEqual(8, len(webhooks[0]["short_id"]))
+        self.assertNotIn("test-a", webhooks[0]["short_id"].lower())
 
         with self.assertRaises(dingtalk.DingTalkError):
             dingtalk.list_webhooks(Path(self._temp_dir.name) / "missing.json")
+
+    def test_missing_group_name_uses_safe_label_and_stable_short_id(self):
+        self.write_standard_config(
+            [{"name": "", "webhook": self.WEBHOOK_A, "enabled": True}]
+        )
+
+        first = dingtalk.list_webhooks(self.config_path)[0]
+        second = dingtalk.list_webhooks(self.config_path)[0]
+
+        self.assertEqual("未命名群", first["name"])
+        self.assertFalse(first["name_configured"])
+        self.assertEqual(first["short_id"], second["short_id"])
+        self.assertNotIn("test-a", first["name"])
+
+    def test_list_webhooks_keeps_optional_bound_conversation_id(self):
+        self.write_standard_config(
+            [{
+                "name": "bound-group",
+                "webhook": self.WEBHOOK_A,
+                "enabled": True,
+                "open_conversation_id": "cid-test-bound",
+            }]
+        )
+
+        group = dingtalk.list_webhooks(self.config_path)[0]
+
+        self.assertEqual("cid-test-bound", group["open_conversation_id"])
 
     def test_load_config_rejects_missing_invalid_and_incomplete_files(self):
         missing_path = Path(self._temp_dir.name) / "missing.json"
@@ -168,6 +200,23 @@ class ConfigTests(DingTalkTestCase):
 
 
 class TokenTests(DingTalkTestCase):
+    def test_access_token_can_support_bound_but_disabled_group(self):
+        self.write_standard_config(
+            [{
+                "name": "paused",
+                "webhook": self.WEBHOOK_A,
+                "enabled": False,
+                "open_conversation_id": "cid-paused",
+            }]
+        )
+        self.urlopen.side_effect = [
+            _FakeResponse({"errcode": 0, "access_token": "token", "expires_in": 7200})
+        ]
+
+        self.assertEqual("token", dingtalk.get_access_token(self.config_path))
+
+        self.assertEqual(1, self.urlopen.call_count)
+
     def test_access_token_is_cached_then_refreshed_inside_safety_window(self):
         self.write_standard_config()
         self.urlopen.side_effect = [
@@ -221,6 +270,115 @@ class TokenTests(DingTalkTestCase):
         self.assertEqual(2, self.urlopen.call_count)
 
 
+class GroupIdentityTests(DingTalkTestCase):
+    OPEN_CONVERSATION_ID = "cid-test-bound"
+
+    def bound_group(self):
+        return {
+            "name": "local-name",
+            "webhook": self.WEBHOOK_A,
+            "short_id": dingtalk.webhook_short_id(self.WEBHOOK_A),
+            "open_conversation_id": self.OPEN_CONVERSATION_ID,
+        }
+
+    def test_resolve_group_identity_returns_verified_official_title(self):
+        self.urlopen.side_effect = [_FakeResponse({
+            "errcode": 0,
+            "success": True,
+            "result": {"title": "钉钉官方群"},
+        })]
+
+        with mock.patch.object(
+            dingtalk, "get_access_token", return_value="identity-token"
+        ) as get_token:
+            result = dingtalk.resolve_group_identity(
+                self.bound_group(), self.config_path, timeout=3
+            )
+
+        self.assertEqual("verified", result["status"])
+        self.assertEqual("dingtalk", result["source"])
+        self.assertEqual("钉钉官方群", result["official_name"])
+        self.assertNotIn(self.OPEN_CONVERSATION_ID, json.dumps(result, ensure_ascii=False))
+        get_token.assert_called_once_with(self.config_path, 3)
+        request = self.urlopen.call_args.args[0]
+        self.assertEqual("POST", request.get_method())
+        self.assertIn("/topapi/im/chat/scenegroup/get?access_token=identity-token", request.full_url)
+        self.assertEqual(
+            {"open_conversation_id": self.OPEN_CONVERSATION_ID},
+            json.loads(request.data.decode("utf-8")),
+        )
+
+    def test_resolve_group_identity_uses_cache_unless_explicitly_refreshed(self):
+        self.urlopen.side_effect = [
+            _FakeResponse({"errcode": 0, "result": {"title": "first"}}),
+            _FakeResponse({"errcode": 0, "result": {"title": "refreshed"}}),
+        ]
+        with mock.patch.object(dingtalk, "get_access_token", return_value="token"):
+            first = dingtalk.resolve_group_identity(self.bound_group(), self.config_path)
+            cached = dingtalk.resolve_group_identity(self.bound_group(), self.config_path)
+            refreshed = dingtalk.resolve_group_identity(
+                self.bound_group(), self.config_path, refresh=True
+            )
+
+        self.assertEqual("first", first["official_name"])
+        self.assertEqual("first", cached["official_name"])
+        self.assertEqual("refreshed", refreshed["official_name"])
+        self.assertEqual(2, self.urlopen.call_count)
+
+    def test_resolve_group_identity_handles_missing_binding_without_network(self):
+        result = dingtalk.resolve_group_identity(
+            {"name": "local", "open_conversation_id": ""}, self.config_path
+        )
+
+        self.assertEqual("unbound", result["status"])
+        self.assertEqual("尚未绑定钉钉会话 ID", result["reason"])
+        self.urlopen.assert_not_called()
+
+    def test_resolve_group_identity_classifies_failures_without_leaking_id(self):
+        cases = [
+            (socket.timeout(), "timeout", "群信息查询超时"),
+            (URLError("offline"), "network_error", "网络不可用，暂时无法验证"),
+            (
+                HTTPError("https://api.example", 403, "forbidden", {}, None),
+                "permission_denied",
+                "群信息查询权限不足",
+            ),
+            (
+                _FakeResponse({"errcode": 400020, "errmsg": "denied"}),
+                "permission_denied",
+                "群信息查询权限不足",
+            ),
+            (
+                _FakeResponse({"errcode": 400001, "errmsg": "failure"}),
+                "api_error",
+                "钉钉群信息接口拒绝了查询",
+            ),
+            (
+                _FakeResponse({"errcode": 0, "result": {"title": ""}}),
+                "empty_title",
+                "钉钉未返回可用的群名称",
+            ),
+            (
+                _FakeResponse(["unexpected"]),
+                "api_error",
+                "钉钉群信息接口返回异常数据",
+            ),
+        ]
+        with mock.patch.object(dingtalk, "get_access_token", return_value="token"):
+            for response, status, reason in cases:
+                with self.subTest(status=status):
+                    dingtalk.clear_group_identity_cache()
+                    self.urlopen.reset_mock()
+                    self.urlopen.side_effect = [response]
+                    result = dingtalk.resolve_group_identity(
+                        self.bound_group(), self.config_path
+                    )
+                    self.assertEqual(status, result["status"])
+                    self.assertEqual(reason, result["reason"])
+                    self.assertNotIn(
+                        self.OPEN_CONVERSATION_ID,
+                        json.dumps(result, ensure_ascii=False),
+                    )
 class MessageSendingTests(DingTalkTestCase):
     def test_send_text_posts_expected_utf8_payload_to_enabled_groups_only(self):
         self.write_standard_config(

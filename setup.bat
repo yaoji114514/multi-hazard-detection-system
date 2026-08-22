@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal EnableDelayedExpansion
+set PYTHONUTF8=1
 
 title 多类隐患检测系统 - 环境安装
 
@@ -12,6 +13,13 @@ echo.
 
 REM 切换到脚本所在目录(保证可移植)
 cd /d "%~dp0"
+
+REM setup.bat 仅适用于 Windows；macOS 请使用 python3 setup.py（自动识别系统）。
+if /i not "%OS%"=="Windows_NT" (
+    echo [错误] 此脚本仅支持 Windows。macOS 请运行: python3 setup.py
+    pause
+    exit /b 1
+)
 
 REM ===== 第1步: 检测 Python =====
 echo [1/6] 正在检测 Python 环境...
@@ -50,7 +58,8 @@ echo [2/6] 正在创建独立虚拟环境(.venv)...
 if exist ".venv" (
     echo       虚拟环境已存在,跳过创建
 ) else (
-    !PY_CMD! -m venv --system-site-packages .venv
+    REM 不继承系统 site-packages，避免全局 OpenCV/PyTorch 等依赖影响项目环境
+    !PY_CMD! -m venv .venv
     if !errorlevel! neq 0 (
         echo [错误] 虚拟环境创建失败
         pause

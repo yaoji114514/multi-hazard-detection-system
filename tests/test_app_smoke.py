@@ -28,7 +28,13 @@ class _FakeDatabase:
     def get_recent_records(self, limit=50):
         return []
 
+    def get_image_incident_queue(self, history_limit=200):
+        return []
+
     def get_realtime_violations(self, limit=50):
+        return []
+
+    def get_realtime_incident_queue(self, history_limit=200):
         return []
 
     def get_statistics(self):
@@ -37,6 +43,16 @@ class _FakeDatabase:
             "violation_count": 0,
             "compliance_rate": 100.0,
             "no_helmet_total": 0,
+        }
+
+    def get_incident_statistics(self):
+        return {
+            "total": 0,
+            "pending": 0,
+            "in_progress": 0,
+            "closed": 0,
+            "false_positive": 0,
+            "overdue": 0,
         }
 
     def get_daily_stats(self, days=7):
@@ -58,7 +74,9 @@ class StreamlitAppSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         modules = {
-            "detector": _module("detector", HazardDetector=_FakeDetector),
+            "detector": _module(
+                "detector", HazardDetector=_FakeDetector, select_compute_device=lambda: "cpu"
+            ),
             "database": _module("database", Database=_FakeDatabase),
             "alert": _module("alert", AlertEngine=_FakeAlertEngine),
             "dingtalk": _module(
@@ -83,22 +101,28 @@ class StreamlitAppSmokeTests(unittest.TestCase):
 
     def test_default_page_starts_with_expected_navigation(self):
         self.assert_app_has_no_exception()
-        self.assertIn("📷 多类隐患智能检测", [item.value for item in self.app.title])
+        self.assertIn("多类隐患智能检测", [item.value for item in self.app.title])
         self.assertEqual(
             self.app.sidebar.radio[0].options,
-            ["📷 隐患检测", "🎥 实时检测", "🎬 视频检测", "📋 检测记录", "📊 统计分析"],
+            ["隐患检测", "实时检测", "视频检测", "检测记录", "统计分析"],
         )
 
     def test_non_camera_pages_render_without_exceptions(self):
         for page, expected_title in (
-            ("📋 检测记录", "📋 检测记录"),
-            ("📊 统计分析", "📊 统计分析"),
-            ("🎬 视频检测", "🎬 视频文件检测"),
+            ("检测记录", "检测记录"),
+            ("统计分析", "统计分析"),
+            ("视频检测", "视频文件检测"),
         ):
             with self.subTest(page=page):
                 self.app.sidebar.radio[0].set_value(page).run(timeout=30)
                 self.assert_app_has_no_exception()
                 self.assertIn(expected_title, [item.value for item in self.app.title])
+
+    def test_video_page_discloses_that_results_do_not_enter_incident_queue(self):
+        self.app.sidebar.radio[0].set_value("视频检测").run(timeout=30)
+        self.assert_app_has_no_exception()
+        visible_info = " ".join(item.value for item in self.app.info)
+        self.assertIn("不进入隐患处置队列", visible_info)
 
 
 if __name__ == "__main__":

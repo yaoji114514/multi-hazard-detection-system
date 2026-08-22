@@ -18,7 +18,10 @@ required = {
     "torch": "深度学习框架",
     "torchvision": "视觉模型",
     "ultralytics": "YOLOv8 检测框架",
-    "streamlit": "Web 界面",
+    "fastapi": "V3 本地 API",
+    "uvicorn": "V3 本地服务",
+    "multipart": "文件上传解析",
+    "streamlit": "经典回滚界面",
     "cv2": "OpenCV 图像处理",
     "PIL": "Pillow 图像库",
     "pandas": "数据处理",
@@ -50,6 +53,8 @@ print(f"  [OK] PyTorch 版本: {torch.__version__}")
 print(f"  [OK] CUDA 可用: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"  [OK] GPU 设备: {torch.cuda.get_device_name(0)}")
+elif getattr(getattr(torch, "backends", None), "mps", None) and torch.backends.mps.is_available():
+    print("  [OK] MPS 可用: Apple Silicon GPU 推理")
 else:
     print("  [信息] 使用 CPU 推理（无需独显，满足检测需求）")
 
@@ -99,9 +104,15 @@ try:
     from detector import HazardDetector
     from alert import AlertEngine
     from database import Database
+    from src.web_api import app as web_app
+    frontend_index = Path(__file__).parent / "frontend" / "dist" / "index.html"
+    if not frontend_index.is_file():
+        raise FileNotFoundError(f"V3 前端构建产物缺失: {frontend_index}")
     print("  [OK] src/detector.py (检测模块)")
     print("  [OK] src/alert.py (预警模块)")
     print("  [OK] src/database.py (数据存储模块)")
+    print(f"  [OK] {web_app.title} (V3 本地 API)")
+    print("  [OK] frontend/dist/index.html (V3 前端)")
 except Exception as e:
     print(f"  [失败] 源码模块导入失败: {e}")
     sys.exit(1)
@@ -112,6 +123,7 @@ print("=" * 50)
 print("""
 启动方式:
   双击 run.bat
-  或命令行: .venv\\Scripts\\streamlit.exe run app.py
+  或命令行: .venv\\Scripts\\python.exe -m uvicorn src.web_api:app --host 127.0.0.1 --port 8501
+  经典界面: run_legacy.bat
   访问地址: http://localhost:8501
 """)

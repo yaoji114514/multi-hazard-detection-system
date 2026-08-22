@@ -1,5 +1,179 @@
 # 项目共享日志
 
+## 2026-08-22 11:22 - 完成 V3 独立前端与本地 API 完全重构
+
+- 任务：按用户“不要被现有架构束缚”的明确授权，将第二版深色 Streamlit 后台替换为能够明显感知的全新前端，同时保留现有模型、SQLite、钉钉链路和可回滚入口。
+- 改动：新增 `frontend/`，以 Vite + React 19 + TypeScript 构建“安全影像校样台 + 现场签派条”，取消永久侧栏、重复状态轨和通用卡片墙；五项能力改为顶部导航，图片以大证据舞台、原图/AI 标注和目标联系条复核，实时以摄像头舞台和事件签派呈现，记录页以证据联系表驱动处置单，统计页围绕积压、隐患排行和七日趋势组织，通知设置使用脱敏抽屉。新增 `src/web_api.py` 作为同源 FastAPI 服务，复用现有 detector/database/alert/dingtalk，实现图片检测、统一处置、统计、通知群管理、安全媒体访问、H.264 视频后台任务和浏览器实时帧检测；实时通知保留文字/截图分阶段与 30/60/120 秒退避。`run.bat` / `run_macos.sh` 切为 V3 默认入口，新增 `run_v3.bat`，并以 `run_legacy.bat` / `run_legacy_macos.sh` 保留经典 Streamlit 回滚。同步更新依赖、安装验证、Demo 包白名单、README、使用说明、PRODUCT/DESIGN 与 API/发布测试；目标电脑运行预构建前端，无需 Node.js。
+- 验证：`npm run build` 通过，构建产物约 290 KB JS / 33 KB CSS；`.venv\Scripts\python.exe -m py_compile`、完整 `unittest discover` 118 项、V3/经典 Windows 启动检查、macOS shell 语法和 `git diff --check` 通过。真实启动 Uvicorn 后检查五页、1440×900 桌面与 390×844 手机布局，未见横向溢出或控制台错误；浏览器验收未触发推理、摄像头权限、处置保存或钉钉发送。Impeccable 独立收尾评审的四项材料性问题均已关闭，最终 disposition 为 PASS。
+- 遗留：真实摄像头长时运行、真实图片/视频端到端推理和生产钉钉多群断网场景仍需在目标硬件验收；V3 实时通知重试批次保存在进程内，服务重启后不会恢复。旧 `app.py` 与 Streamlit 依赖暂时保留一个验收周期，确认 V3 稳定后再决定是否移除。
+
+## 2026-08-19 21:13 - 记住最近检查上下文
+
+- 任务：修复项目名称和检查人在 Streamlit 重启后清空的问题，使当前电脑可恢复最近一次输入。
+- 改动：`src/database.py` 新增 `last_check_context` 单行本机偏好表及读写方法；`app.py` 的侧栏输入首次加载本机默认值，字段变更后自动保存，数据库不可用时不阻断检查；`tests/test_database.py` 和 `tests/test_app_helpers.py` 覆盖持久化、重启恢复及不改写历史检测记录；`使用说明.md` 补充行为说明。
+- 验证：`.venv\\Scripts\\python.exe -m py_compile app.py src\\database.py`、`.venv\\Scripts\\python.exe -m unittest discover -s tests -v`（106 项）、`run.bat --check` 和 `git diff --check` 均通过。
+- 遗留：保存范围仅限当前电脑的本地数据库；更换电脑或清除本地数据库后需要重新填写。
+
+## 2026-08-14 - 训练工作交接需求（本对话不执行训练）
+
+- 范围：模型训练不属于本对话。本对话的产物是交给后续“训练对话”的准备说明；本日志本身不构成启动训练的指令。
+- 已准备：当前十类 Ultralytics YOLO 基线及其数据集；独立四类 PPE 专项集（2,286 张，已生成不改写源数据的 COCO 副本）；PaddleX 隔离环境、`PicoDet-S` 配置和训练入口；当前 `partner_model.pt` / `best.pt` 与应用推理链路未改动。
+- 后续训练对话开始前必须核定：① 合作方 32 张现场图的标注经人工复核，并冻结为只验收、不参与 train/val 的集合；② 本轮实际训练目标是十类 YOLO 续训，还是四类 PaddleX 候选；③ 数据版本、切分清单、初始权重、配置版本和输出目录；④ 验收指标，至少包括 `NO-Hardhat` 漏检、误报、总 mAP 与真实视频事件表现。
+- 建议的首轮范围：如选择 PaddleX，先用四类专项集训练 `PicoDet-S` 候选，并把其四类输出与当前 YOLO 的相同四类映射在冻结现场集上对比；不要把标签不完整的四类数据直接混进现有十类 YOLO 数据集。
+- 后续训练对话应留下：运行目录、数据 manifest、完整配置、初始/最终权重、训练日志、逐类评估与冻结现场集对比结论。训练结束也不得自动替换 `models/active_model.txt`。
+
+## 2026-08-14 01:20 - PaddleX 仅保留数据质检与训练入口，未保留候选模型
+
+- 任务：用户要求引入 PaddleX，但未授权执行候选模型训练。
+- 处理：已删除误启动产生的两个 `runs/paddlex/helmet_ppe_picodet_s/*_smoke/` 目录及其权重、日志和导出产物；仅保留 `check_dataset` 数据质检报告。PaddleX 隔离环境、COCO 副本、训练入口和同版本官方 PicoDet-S 配置资产继续保留，供用户明确授权后再使用。
+- 验证：当前 `models/active_model.txt` 仍为 `partner_model.pt`；`models/best.pt` 与 `models/partner_model.pt` 的 SHA-256 均为 `2419700BBE3B8D38F9000655D9CF952A4BC93EF6C143BAF8B49A0ABDE5D0760F`。应用、十类 YOLO 数据和生产模型均未修改。
+- 遗留：PaddleX 当前不是生产训练或部署路径；后续任何 `smoke`、正式训练、评估、模型替换或部署动作均需用户单独明确授权。
+
+## 2026-08-14 00:37 - 引入 PaddleX 候选训练治理流程
+
+- 任务：按既定路线把 PaddleX 纳入训练流程，不改动现有十类 Ultralytics YOLO 应用或当前生产模型。
+- 改动：新增独立 GPU/CPU 环境安装脚本 `setup_paddlex.bat`、`setup_paddlex_cpu.bat`，YOLO 到 COCO 的只读副本导出工具 `tools/export_yolo_to_coco.py`，环境校验工具 `tools/verify_paddlex_environment.py`，PaddleX 引擎入口 `tools/run_paddlex_engine.py`，以及 PicoDet-S 的 `check / smoke / train / evaluate` 入口 `run_paddlex_pilot.bat` 和操作说明 `PADDLEX_TRAINING.md`；新增转换单元测试。将四类专项集导出为被 Git 忽略的 `data/paddlex/helmet_specialized_v1/`，包含 2,286 张图片、6,038 个 COCO 标注（train/val=1,829/457），且冻结 COCO 数据不会被 PaddleX 自动重切分或改写。PaddleX 训练产物也只写入忽略目录 `runs/paddlex/`。
+- 验证：转换脚本 `py_compile`、2 项单元测试、实际 COCO 导出与完整性断言、`git diff --check` 均通过；CPU 隔离环境实际安装 `PaddlePaddle 3.3.0` 和 `PaddleX 3.7.2`，`paddle.utils.run_check()`、`pip check` 和 PaddleX `check_dataset` 均通过。质检报告在 `runs/paddlex/helmet_ppe_picodet_s/20260814_003656_check/`，确认数据为四类 `COCODetDataset`、train/val=1,829/457，且输出含类别直方图和抽样可视化。当前模型与应用未改动。
+- 遗留：Windows RTX 50 系 GPU 训练环境仍待通过 CUDA 运行库下载与 1 epoch smoke。PaddleDetection 训练插件仅在后续 GPU 阶段安装，且应记录其具体提交；不在 CPU 质检环境中安装或跑 50 epoch。合作方 32 张现场图也仍需人工复核后作为不参与训练的冻结验收集。
+
+## 2026-08-13 02:30 - 建立隔离的安全帽专项候选数据集
+
+- 任务：收集有标注的公开 PPE 数据来补强安全帽基线，但不把外部不完整标签直接并入现有十类训练集。
+- 改动：下载并校验 Mendeley `Dataset of Personal Protective Equipment (PPE)` v6（数据页标示 CC BY 4.0）；新增 `data/helmet_specialized_dataset_v1/` 作为独立四类候选集，类别为 `Hardhat / NO-Hardhat / NO-Safety Vest / Safety Vest`，及可重复执行的 `tools/build_helmet_specialized_dataset.py`。构建脚本校验图片、YOLO 标签、源压缩包大小与 SHA-256，并以 SHA-256 排除与现有训练、评估、合作方现场验收目录完全相同的图片；原始压缩包、图片、标签和抽样审计图均保持本地忽略。
+- 验证：压缩包 236,065,015 bytes、SHA-256 `7a22e5cbc0327971f56358e14f1fce88fec1d6ab30cfac642de0746202ae1f0d` 与来源一致；整理后 train/val 为 1,829/457 张，6,038 个标注（Hardhat 2,421、NO-Hardhat 1,174、NO-Safety Vest 1,058、Safety Vest 1,385），无坏图、坏标、完全相同重复图或跨 split 精确重复；Ultralytics 成功解析数据配置，`py_compile` 与 `git diff --check` 通过。当前线上 `best.pt`、十类数据、应用推理链路均未改动。
+- 遗留：合作方 32 张图片仍需人工核对并冻结为不参与训练的现场验收集；后续只在该验收集与视频事件指标同时胜过当前初始基线时，才考虑部署专项候选模型。SH17（非商业许可）与 SHWD（来源/许可风险）未纳入；Hard Hat Workers 的原始标注导出需要 Roboflow 登录，待取得后再单独 QA。
+
+## 2026-08-13 00:52 - 前端第二版“隐患处置值守台”
+
+- 任务：按用户最终确认的推荐方向完成前端第二版；采用“事件指挥板”视觉与信息架构，在允许大范围调整的前提下保留五个业务入口、Windows 双击启动、既有检测链路和可回滚数据结构。
+- 改动：`app.py` 重构为深色值守工作台，统一页头、检查上下文、系统状态、风险轨和响应式 7:5 工作区；图片页改为证据区与检测命令区，并显示通知送达结果、支持结果直达指定处置记录；记录页合并图片/实时来源，增加全部待办、处理中、待我处理、未分配、红色待办、已超期等快捷视图，改为可单击行的主从证据与处置界面；实时页严格分开监测状态、业务风险和系统故障，仅保留累计违规与已存记录，补全上下文闸门、通知重试状态和最新记录直达；独立收尾审查发现并修复“实时入库失败仍增加已存记录”的误报，失败现在进入独立且持续到用户重置的系统错误通道，不会被同批后续成功记录掩盖；视频页明确只生成标注视频、不入处置队列且逐帧统计可能重复；统计页围绕处置积压、主要隐患与近 7 天趋势组织。同步更新 Streamlit 主题、`PRODUCT.md`、`DESIGN.md`、`使用说明.md` 和前端测试；页面保持无表情符号。
+- 验证：`.venv\Scripts\python.exe -m py_compile app.py`、完整 `unittest discover` 102 项、`run.bat --check`、`git diff --check` 均通过；Impeccable detector 对 `app.py` 返回 0 项。使用受控浏览器实际检查五个页面、1440×1000 桌面和 390×844 手机视口，截图保存于 `.impeccable/review/`；验收未启动摄像头、未执行图片/视频推理、未保存处置、未发送钉钉消息，业务数据库与本地私密配置未改写。
+- 遗留：仍需在真实摄像头、真实上传图片、长视频和钉钉断网/多群部分失败条件下做端到端硬件验收；Streamlit 原生上传控件仍含英文 `Upload` 与文件大小提示；历史图片记录没有原图完整路径，只能展示现有标注证据；当前工作流保存最终状态而非完整审计时间线。
+
+## 2026-08-12 23:57 - 归档前端体验评审
+
+- 任务：按 Impeccable 对当前 Streamlit 前端做桌面端与窄屏体验评审，给后续设计迭代建立可追踪基线。
+- 改动：未修改应用代码、配置、数据库或业务数据；新增 `.impeccable/critique/2026-08-12T15-57-25Z__app-py.md`，记录双代理设计评估、启发式评分、优先问题与建议方向。
+- 验证：本地启动 `app.py` 并检查隐患检测、实时检测、检测记录、统计分析与通知设置；390×844 窄屏未见明显横向溢出；Impeccable detector 对 `app.py` 返回 0 项；评审服务和主评审浏览器状态已清理。
+- 遗留：优先处理实时页监测/故障/风险状态混淆、检测结果直达处置、视频结果能力边界；随后精简工作队列和检测上下文。次代理的隔离浏览器会话已由运行时释放，无法独立复核其标签页清理状态。
+
+## 2026-08-12 - 收紧正式测试包并固定初始基线模型
+
+- 任务：逐项审计正式测试包，只交付测试用户安装、启动和体验现有功能所需内容；包内仅使用初始基线模型。
+- 改动：`tools/make_demo_package.py` 只复制运行白名单并写入 `models/active_model.txt=best.pt`；排除 Windows/macOS 标注入口、标注服务、GPU/安装诊断脚本、未被界面引用的示例视频，以及重复的发布说明、包内清单和包内校验文件。同步把《使用说明》的目录树和钉钉验证步骤改为测试包真实内容，并纳入用户定稿的 AI Agent 辅助咨询说明。开发工作区中的标注/诊断工具、`partner_model.pt` 及其激活配置均未删除或修改。
+- 验证：完整 `unittest discover` 共 97 项通过；重建 `v0.1.0-test1` 后实际目录与 ZIP 均为 19 个文件，反向扫描未发现标注、诊断、训练、评估、测试、运行数据、本机凭据或其他模型；ZIP CRC 通过，包内 `best.pt` 成功加载并对内置图片检出 23 个目标；源目录、解压目录与 ZIP 内的《使用说明》字节一致。ZIP SHA-256：`86288023cd66c806ebd8c6d679952af6337ccfa10a78d4ea8db8ebffb2996bf3`。
+- 遗留：仍需在干净的 Windows 与真实 macOS 主机完成解压、安装和图片/视频/摄像头端到端验收后，再扩大分发范围。
+
+## 2026-08-11 23:34 - 生成首个正式测试版分发包
+
+- 任务：生成可交付的跨平台正式测试版 Demo 包，并排除运行数据与本机凭据。
+- 改动：新增 `tools/make_demo_package.py` 与对应测试，以白名单构建 Demo 包；仅纳入当前启用的 `partner_model.pt`、必需的 `best.pt` 回退模型、应用源码、安装/启动脚本、样例、配置模板和唯一用户操作文档 `使用说明.md`（不再重复纳入 `README.md`）。生成 `build/多类隐患检测系统_正式测试版_v0.1.0-test1_20260811/`、同名 ZIP 及 SHA-256 文件；包内含发布说明、逐文件清单和逐文件校验。
+- 验证：完整 `unittest discover` 共 96 项通过，Python 编译、`git diff --check`、`run.bat --check` 通过；ZIP CRC、ZIP SHA-256、包内 29 个文件的 SHA-256 均通过。已确认不含 `.venv`、`data/db`、`data/uploads`、训练/评估资料、日志、`config/dingtalk.local.json` 或其他运行数据。ZIP SHA-256：`e33e9a2a33af30809a8f633c219cab9e020f47ba3fea196c6061e18b0c29010c`。
+- 遗留：仍需在干净的 Windows 和真实 macOS 主机完成解压、安装、图片/视频/摄像头端到端验收后再扩大分发范围。
+
+## 2026-08-11 22:31 - 支持 macOS 安装与 Apple Silicon MPS 推理
+
+- 任务：在保留 Windows 双击安装方式的前提下，增加先识别操作系统的安装入口，并支持 macOS 运行。
+- 改动：新增 `setup.py`，按 Windows/macOS 分派至既有 `setup.bat` 或新的 `setup_macos.sh`；新增 macOS 应用和标注启动脚本。macOS 安装会创建 Unix `.venv`、安装 PyTorch/项目依赖并报告 MPS 或 CPU 模式；启动时为 MPS 不支持的算子启用 CPU 回退。`src/detector.py` 统一选择 CUDA、Apple MPS、CPU，图片、实时摄像头和视频检测均复用该选择；`verify_install.py` 增加 MPS 状态显示。更新安装文档与自动分派、装置选择的回归测试。
+- 验证：`.venv\Scripts\python.exe -m unittest discover -s tests -v` 共 93 项通过；`python -m py_compile app.py src\detector.py verify_install.py setup.py`、`git diff --check`、三个 macOS shell 脚本的 `bash -n` 语法检查，以及 `run.bat --check` 通过；真实 macOS/MPS 硬件尚待在目标 Mac 验证。
+- 遗留：macOS 首次安装需要联网下载 macOS 版 Python 依赖；从 Windows 迁移时不可复用 `.venv`。
+
+## 2026-08-11 19:35 - 前端页面去除表情符号
+
+- 任务：按用户要求移除前端页面中的表情符号，保持中文标签、风险等级文字和原有五个功能入口不变。
+- 改动：`app.py` 去除浏览器页签图标、侧边栏标题、导航项、页面标题、记录页签、实时操作区和录制按钮中的表情符号；历史记录的结构化预警证据不再把后端兼容字段 `icon` 渲染到页面。`tests/test_app_smoke.py` 同步更新纯中文导航和标题断言；`使用说明.md` 同步移除旧图标并更新导航、按钮和实时统计文案。`src/alert.py` 的 `icon` 字段保留为后端兼容数据，不再作为当前前端展示内容。
+- 验证：目标页面和文档使用扩展图形字符扫描为 0 项；`.venv\\Scripts\\python.exe -m py_compile app.py src\\dingtalk.py` 通过；9 个测试模块独立进程共 89 项 `unittest` 通过；`tests.test_app_smoke` 的 2 项页面烟测通过；Impeccable detector 返回 0 项；`git diff --check` 通过。
+- 遗留：历史或旧版工具脚本中仍可能保留表情符号，但不属于当前 `app.py` 前端页面；如后续重新启用 `tools/legacy` 页面，需要单独做同样的文案清理。
+
+## 2026-08-10 22:26 - 隔离环境完成全量回归
+
+- 任务：在新建的项目隔离 Python 环境中复核此前被系统 OpenCV 冲突阻断的应用烟测，并完成当前工作区的完整离线验收。
+- 改动：无业务代码、配置、数据库或凭据改动；仅更新本条验证状态。
+- 验证：使用 `.venv\Scripts\python.exe` 将 9 个测试模块分别运行，共 89 项 `unittest` 全部通过；其中 `tests.test_app_smoke` 的 2 项 Streamlit 页面烟测已通过。`python -m py_compile app.py src/dingtalk.py`、`run.bat --check`、示例 JSON 解析和 `git diff --check` 均通过。
+- 遗留：隔离环境当前为 CPU 版 PyTorch；真实钉钉会话验证仍需用户提供测试群与管理员权限。Ultralytics 尝试写入账户级设置时有权限警告，不影响项目启动、模型加载或本次测试。
+
+## 2026-08-10 22:21 - 创建项目隔离 Python 环境
+
+- 任务：避免系统 Python 中已有的 OpenCV、PyTorch 等全局依赖影响项目运行，为当前工作区创建独立的项目环境。
+- 改动：`setup.bat` 创建 `.venv` 时移除 `--system-site-packages`，并设置 `PYTHONUTF8=1`，确保不继承全局依赖且可正确读取 UTF-8 的依赖清单；基于系统 Python 3.12.8 创建本地 `.venv` 并安装 `requirements.txt`，该目录按既有 `.gitignore` 规则不入库。
+- 验证：确认 `.venv\Scripts\python.exe` 的前缀为项目目录、基础解释器为系统 Python；`run.bat --check` 通过；`verify_install.py` 通过核心依赖、CPU PyTorch、模型加载、样例图片推理（23 个目标）和源码模块检查。
+- 遗留：当前隔离环境安装的是 CPU 版 PyTorch；如目标机具备 NVIDIA GPU，仍应通过 `setup.bat` 的 GPU 分支安装匹配的 CUDA 版。Ultralytics 在当前受限账户目录写入全局设置时有权限警告，不影响项目依赖、模型加载或推理。
+
+## 2026-08-10 22:04 - 绑定后验证钉钉群名
+
+- 任务：实现真实群名的可靠降级方案；确认 webhook 不能反查群名后，支持用户绑定 `open_conversation_id` 再显式验证，而不伪称为 webhook 自动识别。
+- 改动：`src/dingtalk.py` 为每个群兼容可选会话 ID，新增基于 `topapi/im/chat/scenegroup/get` 的脱敏群名解析、5 分钟缓存、显式刷新和超时/断网/HTTP/权限/业务错误/空标题分级；不影响既有文字、markdown、图片发送。`app.py` 的接收群组设置新增受掩码保护的会话 ID 绑定、官方群名/本机名称/来源/识别状态分层，以及“保存群组选择”和“刷新群名（不保存）”两项显式动作；保存按 webhook 安全短标识匹配并校验重复绑定，旧单 webhook 配置可迁入兼容列表。`config/dingtalk.example.json` 与 `使用说明.md` 记录字段、权限和绑定流程；测试补充验证结果不含会话 ID、缓存与失败降级分支。
+- 验证：查阅钉钉官方选会话、场景群查询和权限资料，确认选会话 JSAPI 仅适用于钉钉微应用/小程序，群查询要求企业内部应用的 chat 读取权限；`python -m py_compile app.py src/dingtalk.py`、8 个离线测试模块独立进程（87 项）和 `run.bat --check` 通过，`git diff --check` 通过。
+- 遗留：未触碰真实 webhook、会话 ID 或群；真实验证仍需用户在有权限的钉钉环境取得会话 ID，并由管理员授予接口权限。`tests.test_app_smoke` 在本机系统 Python 的 `cv2.gapi.wip.draw.Text` 导入错误处中断，发生于 app 导入前且与本次钉钉改动无关；项目 `.venv` 当前不存在，需在完整项目环境复跑该烟测。
+
+## 2026-08-10 21:50 - 交接需求：钉钉真实群名自动识别（待其他对话实施）
+
+- 背景：当前项目是 Windows 本地部署的 Streamlit 应用，入口为 `app.py`，钉钉发送模块为 `src/dingtalk.py`，本地私密配置为 `config/dingtalk.local.json`。现有配置结构是 `app_key`、`app_secret`、`webhooks[]`，每个 webhook 项目包含 `name`、`webhook`、`enabled`。当前版本已经完成“通知设置 → 接收群组”的二级 UI、可编辑本机群名、Webhook 安全短标识、同名/笼统名称提醒，以及按 webhook 而不是按群名写回开关；实时页已移除“已处理帧”。
+- 核心问题：Webhook 只知道消息投递目标，当前代码无法仅凭 webhook 反查钉钉真实群名。因此现版的 `name` 只是本机显示名，安全短标识也只是本地生成的区分码，不能冒充钉钉官方群名。用户希望进一步实现“智能识别群名”，避免启停群组时误开/误关。
+- 任务性质：这不是纯前端改文案，而是“钉钉开放平台能力 + 配置模型 + 后端解析/缓存 + Streamlit UI + 测试”的联合需求。必须先查阅钉钉官方最新文档，确认 `openConversationId`、群信息查询接口、应用类型、访问权限、授权方式和调用频率限制；不要凭记忆猜接口、权限或 URL。官方资料入口可从自定义机器人文档和会话选择文档开始：`https://open.dingtalk.com/document/orgapp/custom-robot-access`、`https://open.dingtalk.com/tools/explorer/jsapi?id=10303`。
+- 目标结果：在通知设置中，用户能看到“钉钉官方群名（如已验证）+ 本地安全群标识 + 识别状态 + 接收开关”，并且能明确知道当前名称来自钉钉接口、本机配置，还是尚未验证；两个群即使同名，也不能仅凭名称作为唯一身份。真实群名识别失败、断网、权限不足或接口超时不得阻断应用启动和现有通知链路。
+
+- 推荐实现路径（先验证再编码）：
+  1. 先确认当前本地 Streamlit 应用能否合法取得 `openConversationId`。如果钉钉官方要求在 DingTalk H5/小程序内通过选群 API 获取，则不能假装本地浏览器可以直接完成；应设计一个一次性“绑定群”流程（用户在有权限的钉钉环境选择群，回填 `openConversationId`），或明确需要管理员手工粘贴该 ID。
+  2. 在 `config/dingtalk.local.json` 中为 webhook 增加可选字段，例如 `open_conversation_id`；保留旧配置兼容。建议的逻辑身份优先级是 `open_conversation_id`，其次是 webhook 的安全短标识，绝不能用可变的 `name` 作为主键。
+  3. 在 `src/dingtalk.py` 增加小范围的群身份解析能力：超时、鉴权、HTTP 状态和钉钉业务错误要分别处理；成功时返回官方群标题和会话 ID；失败时返回可解释状态并降级到本机 `name` + 短标识。接口调用应有短 TTL 缓存和显式刷新，不能因为 Streamlit 每次 rerun 就反复请求钉钉。
+  4. 在 `app.py` 的“通知设置 → 接收群组”中增加识别状态：例如“钉钉已验证”“本机名称（未绑定）”“暂时无法验证”。提供明确的“刷新群名/绑定群”入口；刷新前后要保留用户当前启停选择。名称变更、绑定 ID 变更和启停变更必须显式保存，不能输入一个字符就写配置。
+  5. 如官方能力无法在当前架构下完成，交付可靠降级方案：继续显示本机群名和安全短标识，增加“名称来源：本机配置，钉钉未验证”的文案，并在日志中记录待办，不得把本机别名标成“钉钉真实群名”。
+
+- 建议配置形态（仅示意，不要把真实凭据写入仓库）：
+  ```json
+  {
+    "app_key": "本地私密配置",
+    "app_secret": "本地私密配置",
+    "webhooks": [
+      {
+        "name": "现场总群",
+        "webhook": "https://oapi.dingtalk.com/robot/send?access_token=本地私密值",
+        "enabled": true,
+        "open_conversation_id": "可选的钉钉会话唯一标识"
+      }
+    ]
+  }
+  ```
+  `open_conversation_id` 必须是可选字段；旧的单 webhook 配置、缺少该字段的多群配置、禁用群和所有现有发送函数都要继续工作。
+
+- 安全与兼容约束：
+  - 不在 UI、异常、日志、测试输出或提交内容中显示完整 webhook、access token、app secret、`open_conversation_id` 或完整会话凭据；所有错误信息都要脱敏。
+  - 不自动发送“识别测试消息”，不自动加入/退出群，不修改钉钉群设置；如要增加测试按钮，必须只在用户明确点击后向明确选中的单个 webhook 发送，并在按钮旁写清发送目标和副作用。
+  - 不以群名作为更新匹配条件；同名群必须通过 `open_conversation_id` 或 webhook 安全身份区分。
+  - 识别接口不可用时只影响“名称验证”，不能让已有文字/markdown/图片通知整体失效；保留现有单群失败隔离、全部失败才抛错和实时退避重试逻辑。
+  - 不引入改变 `setup.bat` / `run.bat` 双击启动方式的新前端框架，不新增云端数据库，不把真实配置迁入 Git。
+  - 任何新增配置字段和代码都应可逆；不要修改检测事实表，不要为了群名识别迁移业务数据库。
+
+- 验收标准：
+  1. 两个不同 webhook 即使本机名称相同，UI 也能展示不同的稳定身份；若已绑定并有权限，展示钉钉官方群名和“已验证”状态。
+  2. 真实群名接口成功、超时、断网、权限不足、返回空标题、返回业务错误等场景均有单元测试；失败时页面仍可启停群组并继续原有通知。
+  3. 旧配置不含 `open_conversation_id` 时可以正常启动、发送和编辑；回滚代码后新增字段不会破坏旧版本读取。
+  4. Streamlit rerun 不会重复调用群名接口；显式刷新有缓存/节流策略，并显示最近一次识别时间或失败原因。
+  5. 配置保存按不可变身份匹配，名称重复、名称为空、身份缺失和身份冲突都有明确校验，不能静默写错群。
+  6. UI 同时表达名称、身份、来源、验证状态和接收状态，不依赖颜色或图标单独传达含义；窄屏和键盘操作不出现溢出。
+  7. 运行 `python -m py_compile app.py src/dingtalk.py`、9 个测试模块独立进程回归、`git diff --check`；若使用浏览器验收，至少检查通知设置、失败降级和实时页统计。
+  8. 测试只能使用 mock/临时配置；真实钉钉端到端测试必须由用户提供测试群和明确授权，不能在无人确认时触碰生产群。
+
+- 交接提示词（可复制给负责实现的其他对话）：
+  > 请在 `F:\\sytksakgdlalsd\\stystsyysy` 项目中实现“钉钉真实群名自动识别”。先读取 `AGENTS.md`、`PROJECT_LOG.md` 和 git 状态，保留现有未提交改动，禁止提交真实配置、数据库、上传产物或 token。当前项目使用 Streamlit（`app.py`）和 `src/dingtalk.py`，配置为 `config/dingtalk.local.json`，现版已经有“通知设置 → 接收群组”、Webhook 安全短标识、同名提醒和按 webhook 保存。请先查钉钉官方最新文档，确认 `openConversationId` 获取方式、群信息查询接口、应用权限和本地 Streamlit 是否具备调用条件；不要猜接口。然后给出最小可回滚实现：可选 `open_conversation_id` 配置、脱敏的群身份解析/缓存/显式刷新、UI 的官方群名/本机名称/验证状态分层，以及没有 ID、断网、权限不足和旧配置的可靠降级。配置保存必须按不可变身份匹配，不能按群名匹配；不能自动发测试消息或修改群设置；保留原有多群失败隔离、图片/文字通知和 Windows 双击启动。补充 mock 单元测试、app smoke 测试、语法检查和 diff 检查；完成后在 `PROJECT_LOG.md` 顶部按“任务/改动/验证/遗留”追加日志，并明确哪些能力因钉钉权限或真实群测试尚未验证。
+
+- 遗留/决策点：在确认官方 API 和授权方式前，不要承诺“完全自动识别”。如果最终只能由用户绑定 `openConversationId`，产品文案应称“绑定后验证群名”，不要称“Webhook 自动识别”。
+
+## 2026-08-10 21:38 - 钉钉群组识别与通知设置分层
+
+- 任务：按用户反馈降低多群启停歧义，将钉钉群选择收进更清晰的二级设置，并移除实时页不需要的“已处理帧”展示。
+- 改动：`src/dingtalk.py` 为每条机器人 Webhook 生成不暴露 token 的稳定安全群标识，未命名项不再截取 token 作为名称；`app.py` 将侧边栏改为“通知设置 → 接收群组”，显示已启用数量，支持编辑本机群名、检测同名或“默认群/群2”等笼统名称、核对安全群标识和接收状态后统一保存；配置写回改为按 Webhook 匹配，避免同名群改错。实时统计仅展示“累计违规/已存记录”，内部帧计数继续用于跳帧检测。`使用说明.md` 同步说明群名来源、设置路径及安全群标识；新增名称歧义和短标识回归测试。
+- 验证：9 个测试模块以独立进程运行，82 项 `unittest` 全部通过；`py_compile`、`git diff --check`、Impeccable 扫描通过（0 项）；受控浏览器实机确认两层通知设置、两个现有笼统群名提醒、不同群标识，以及实时页不再出现“已处理帧”。验收未点击保存、未发送钉钉消息，真实本地配置和业务记录未改写。
+- 遗留：机器人 Webhook 只负责消息投递，不能可靠反查钉钉真实群名；本版以“可编辑完整群名 + 安全群标识 + 同名/笼统名称提醒”消除歧义。若要由钉钉自动返回群标题，后续需为每个群补充 `openConversationId` 和对应开放平台权限/接口。
+
+## 2026-08-10 11:30 - 风险优先前端第一版与隐患处置闭环
+
+- 任务：按前端专项审计建议完成第一版风险优先界面，在保留五个既有入口、检测链路和 Windows 双击启动方式的前提下，补齐记录筛选、证据复核与处置闭环，并确保代码和运行数据可回滚。
+- 改动：`app.py` 建立深色本地值守视觉层级，将图片结论改为“最高风险/下一步”优先，增加内容+模型指纹和显式开始按钮以避免 Streamlit rerun 重复推理、入库及告警；检测记录改为红色/超期优先的可筛选工作队列，可选择任意图片或实时证据并保存待处理、处理中、已关闭、误报、负责人、期限和复核说明；实时检测补中文摄像头状态/权限错误、可暂停统计刷新，视频检测改为确认后开始；统计页增加处置进度。`src/database.py` 新增独立 `incident_workflows` 表和参数校验/状态统计，不改写原始检测事实；队列加载全部开放事项，仅对已结项/合规历史保留最近 200 条并在界面明示范围。新增 `PRODUCT.md`、Streamlit 主题、响应式/键盘焦点样式，最低 Streamlit 版本修正为 1.52；数据库和前端辅助测试同步扩充。
+- 验证：9 个测试模块以独立进程运行，80 项 `unittest` 全部通过；Python 语法检查、`run.bat --check`、`git diff --check` 通过；Impeccable 设计反模式扫描为 0 项；使用受控浏览器实际检查桌面与 390px 手机视口、五个页面、图片显式确认和开放队列范围。迁移前已在 `data/db/backups/hazard_records_pre_frontend_v1_20260810_1107.db` 建立 Git 忽略的本地快照；迁移后 SQLite `integrity_check=ok`，原图片/实时记录仍为 2/158 条，处置表 0 条，验收未制造业务记录。
+- 遗留：真实摄像头/WebRTC、长视频转码、真实图片推理和钉钉断网/多群部分失败仍需硬件及端到端测试；第一版保存当前处置状态而非完整审计时间线；历史图片未保存原图完整路径；已结项/合规历史在队列中仅显示最近 200 条，后续数据量增大时可补服务端分页归档。
+
 ## 2026-08-09 07:55 - 实时钉钉通知失败保留与退避重试
 
 - 任务：修复实时通知在网络发送前清空待发送隐患、失败后数据丢失且无法自动重试的问题。

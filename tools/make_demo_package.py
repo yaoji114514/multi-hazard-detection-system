@@ -10,19 +10,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOP_LEVEL_FILES = (
-    "app.py",
     "requirements.txt",
     "使用说明.md",
     "setup.py",
     "setup.bat",
     "run.bat",
-    "run_v3.bat",
-    "run_legacy.bat",
     "setup_macos.sh",
     "run_macos.sh",
-    "run_legacy_macos.sh",
 )
-SOURCE_DIRECTORIES = ("src", ".streamlit", "frontend/dist")
+SOURCE_DIRECTORIES = ("src", "frontend/dist")
 OPTIONAL_FILES = (
     "config/dingtalk.example.json",
     "data/alert.wav",

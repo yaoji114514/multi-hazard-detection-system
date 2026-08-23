@@ -146,9 +146,11 @@ class WebApiTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.uploads = self.root / "data" / "uploads"
         self.snapshots = self.uploads / "snapshots"
+        self.alert_sound = self.root / "data" / "alert.wav"
         self.config = self.root / "config" / "dingtalk.local.json"
         self.uploads.mkdir(parents=True)
         self.snapshots.mkdir(parents=True)
+        self.alert_sound.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
         self.config.parent.mkdir(parents=True)
         self.database = FakeDatabase()
         self.detector = FakeDetector()
@@ -157,6 +159,7 @@ class WebApiTests(unittest.TestCase):
             patch.object(web_api, "DATA_DIR", self.root / "data"),
             patch.object(web_api, "UPLOADS_DIR", self.uploads),
             patch.object(web_api, "SNAPSHOTS_DIR", self.snapshots),
+            patch.object(web_api, "ALERT_SOUND", self.alert_sound),
             patch.object(web_api, "DINGTALK_CONFIG_PATH", self.config),
             patch.object(web_api, "_database", self.database),
             patch.object(web_api, "_detector", self.detector),
@@ -207,6 +210,15 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(404, caught.exception.status_code)
         self.assertNotIn(str(self.root), caught.exception.detail)
         self.assertNotIn("private", caught.exception.detail)
+
+    def test_alert_sound_endpoint_serves_configured_local_asset(self):
+        response = web_api.alert_sound()
+        self.assertEqual(self.alert_sound, Path(response.path))
+        self.assertEqual("audio/wav", response.media_type)
+        with patch.object(web_api, "ALERT_SOUND", self.root / "missing.wav"):
+            with self.assertRaises(HTTPException) as caught:
+                web_api.alert_sound()
+        self.assertEqual(404, caught.exception.status_code)
 
     def test_context_is_trimmed_and_allows_partial_or_empty_values(self):
         response = web_api.put_context(
@@ -339,6 +351,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(0, session["stored_count"])
         self.assertEqual(1, session["storage_errors"])
         self.assertEqual([], response["stored_events"])
+        self.assertEqual({"triggered": True, "sequence": 1}, response["audible_alert"])
         send_text.assert_not_called()
         self.assertNotIn("database path", json.dumps(response, ensure_ascii=False))
 
@@ -354,6 +367,7 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertEqual(1, repeated["session"]["observed_violations"])
         self.assertEqual(1, repeated["session"]["storage_errors"])
+        self.assertEqual({"triggered": False, "sequence": 1}, repeated["audible_alert"])
 
         # 另一类新事件可保存，但不能抹掉之前持续展示的存储错误。
         self.database.fail_realtime = False
@@ -370,6 +384,9 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(1, recovered["session"]["stored_count"])
         self.assertEqual("证据保存失败", recovered["session"]["last_error"])
         self.assertEqual("queued", recovered["session"]["notification_status"])
+        self.assertEqual({"triggered": False, "sequence": 1}, recovered["audible_alert"])
+        reset = web_api.reset_realtime_session("camera-1")
+        self.assertEqual(0, reset["red_alert_sequence"])
 
     def test_realtime_inference_without_violation_is_blue(self):
         self.detector.frame_label = None
@@ -386,6 +403,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual("blue", response["session"]["last_risk"])
         self.assertEqual(0, response["session"]["observed_violations"])
         self.assertEqual(0, response["session"]["stored_count"])
+        self.assertEqual({"triggered": False, "sequence": 0}, response["audible_alert"])
 
     def test_realtime_notification_failure_is_visible_on_session_poll(self):
         response = asyncio.run(

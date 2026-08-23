@@ -142,7 +142,7 @@ echo       PyTorch 安装完成!
 echo.
 
 REM ===== 第5.5步: 安装其他依赖 =====
-echo       正在安装其他依赖(ultralytics, streamlit, opencv 等)...
+echo       正在安装其他依赖(ultralytics, FastAPI, OpenCV 等)...
 !PIP_CMD! install -r requirements.txt %PIP_INDEX%
 if !errorlevel! neq 0 (
     echo.
@@ -167,8 +167,6 @@ REM ===== 第6步: 初始化目录 =====
 echo [6/6] 正在初始化数据目录...
 if not exist "data\uploads" mkdir "data\uploads"
 if not exist "data\db" mkdir "data\db"
-REM 配置 streamlit: 禁用首次 Email 提示(参赛项目无需收集邮箱)
-".venv\Scripts\python.exe" src\configure_streamlit.py
 echo       目录初始化完成
 echo.
 

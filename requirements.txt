@@ -9,26 +9,14 @@
 # --- YOLOv8 检测框架 ---
 ultralytics>=8.0.0
 
-# --- Web 界面 ---
-streamlit>=1.52.0
-
-# --- V3 本地 API 与独立前端托管 ---
+# --- 本地 API 与独立前端托管 ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
 python-multipart>=0.0.20
 
-# --- 实时视频流(实时检测功能需要,WebRTC 推流,UI 不阻塞) ---
-streamlit-webrtc>=0.47.0
-
 # --- 图像处理 ---
 opencv-python-headless>=4.8.0
 Pillow>=10.0.0
-
-# --- 数据处理 ---
-pandas>=2.0.0
-
-# --- 图表可视化 ---
-plotly>=5.18.0
 
 # --- 视频转码(视频检测功能需要) ---
 imageio-ffmpeg>=0.4.9

@@ -1,5 +1,19 @@
 # 项目共享日志
 
+## 2026-08-22 20:41 - 在 React 实时页恢复红色风险声音告警
+
+- 任务：补回旧界面曾具备、V3 初版遗漏的实时红色风险本地警报音，同时保持新架构的风险、存储和通知状态分离。
+- 改动：恢复 `data/alert.wav` 并新增固定的 `/api/alert-sound` 安全资源接口；实时帧响应新增与写库/钉钉解耦的 `audible_alert.triggered/sequence`，只在冷却后的新红色事件递增。React 实时页按 sequence 去重并保留 5 秒硬节流，在连接摄像头手势中解锁浏览器音频；增加声音开启/静音、测试声音、本机偏好记忆、2 秒无障碍红色文字告警，以及停止/重置/离页时终止播放和阻止迟到响应误响。播放失败只更新独立声音状态，不中断检测、入库或通知。发布包、安装验证、PRODUCT 和使用说明同步恢复警报音资产与行为。
+- 验证：声音 API 返回 `200 audio/wav` 和完整 33,644 bytes；API 测试覆盖文件存在/缺失、红色首次触发、冷却期不重复、黄色不触发、存储失败仍触发和会话序号；完整 `unittest discover` 共 88 项通过，React production build、`run.bat --check`、发布白名单、`py_compile` 与 `git diff --check` 通过。受控浏览器在桌面和手机视口确认声音开关/测试入口无溢出，实际点击“测试声音”后页面返回“测试声音已播放”，控制台无错误；Impeccable detector 返回 0 项。
+- 遗留：未在本次验收中请求真实摄像头权限；新的未戴安全帽事件在目标摄像头上的实际扬声器触发仍需硬件端到端确认。
+
+## 2026-08-22 12:07 - 移除旧 Streamlit 前端与回滚链路
+
+- 任务：按用户确认“之前的前端不再使用”清理经典 Streamlit 界面，只保留 React + FastAPI 应用。
+- 改动：删除 `app.py`、`.streamlit/config.toml`、`run_legacy*`、旧 `run_debug.bat`、`src/configure_streamlit.py`、三组旧前端测试和三个已废弃的 Streamlit 标注/复核脚本；将 V3 完整启动逻辑并入 `run.bat` 后删除重复的 `run_v3.bat`。从运行依赖与安装验证中移除 Streamlit、streamlit-webrtc、Pandas、Plotly 和 PyAV 旧链路，安装脚本不再生成 Streamlit 用户配置；发布包只包含 React 构建产物、FastAPI 服务和单一启动入口。同步更新 README、使用说明、PRODUCT、迁移说明、检测器注释和 Demo 包测试。模型、SQLite、钉钉配置、上传证据与当前标注服务器均未删除或迁移。
+- 验证：`py_compile` 通过；精简后的完整 `unittest discover` 共 87 项通过；React production build、`run.bat --check`、macOS shell 语法、发布白名单反向断言、运行代码 Streamlit/Pandas/Plotly/PyAV import 扫描和 `git diff --check` 均通过。
+- 遗留：当前 `.venv` 中可能仍保留此前安装的旧包，本次未擅自卸载；下次重建 `.venv` 时会按精简后的 `requirements.txt` 自然清除。旧界面可从 Git 提交 `2774011` 恢复。
+
 ## 2026-08-22 11:22 - 完成 V3 独立前端与本地 API 完全重构
 
 - 任务：按用户“不要被现有架构束缚”的明确授权，将第二版深色 Streamlit 后台替换为能够明显感知的全新前端，同时保留现有模型、SQLite、钉钉链路和可回滚入口。

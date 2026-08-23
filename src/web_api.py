@@ -45,6 +45,7 @@ DATA_DIR = ROOT_DIR / "data"
 UPLOADS_DIR = DATA_DIR / "uploads"
 SNAPSHOTS_DIR = UPLOADS_DIR / "snapshots"
 SAMPLE_IMAGE = DATA_DIR / "sample_images" / "test_helmet.jpg"
+ALERT_SOUND = DATA_DIR / "alert.wav"
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 DINGTALK_CONFIG_PATH = ROOT_DIR / "config" / "dingtalk.local.json"
 
@@ -368,6 +369,13 @@ def sample_image():
     if not SAMPLE_IMAGE.is_file():
         raise HTTPException(status_code=404, detail="内置示例图片不存在")
     return FileResponse(SAMPLE_IMAGE)
+
+
+@app.get("/api/alert-sound")
+def alert_sound():
+    if not ALERT_SOUND.is_file():
+        raise HTTPException(status_code=404, detail="本地警报音不存在")
+    return FileResponse(ALERT_SOUND, media_type="audio/wav")
 
 
 @app.get("/api/media/{kind}/{filename:path}")
@@ -935,6 +943,7 @@ def _new_realtime_session(session_id: str) -> dict[str, Any]:
         "observed_violations": 0,
         "stored_count": 0,
         "storage_errors": 0,
+        "red_alert_sequence": 0,
         "last_error": None,
         "last_risk": "neutral",
         "notification_status": "idle",
@@ -1136,7 +1145,13 @@ async def realtime_frame(
         for violation_type in eligible:
             state["_last_event"][violation_type] = now
         state["_inflight"].update(eligible)
-
+        audible_triggered = any(
+            HazardDetector.ALERT_LEVELS.get(violation_type, ("yellow",))[0] == "red"
+            for violation_type in eligible
+        )
+        if audible_triggered:
+            state["red_alert_sequence"] += 1
+        audible_sequence = int(state["red_alert_sequence"])
     stored_events = []
     notification_events = []
     detector = get_detector()
@@ -1190,6 +1205,10 @@ async def realtime_frame(
         "detections": detections,
         "summary": summary,
         "risk": risk,
+        "audible_alert": {
+            "triggered": audible_triggered,
+            "sequence": audible_sequence,
+        },
         "stored_events": stored_events,
         "notification": {
             "status": session_stats["notification_status"] if stored_events else "not_needed"

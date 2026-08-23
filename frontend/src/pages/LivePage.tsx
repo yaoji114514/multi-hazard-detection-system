@@ -5,6 +5,8 @@ import {
   CheckCircle,
   DownloadSimple,
   Record,
+  SpeakerHigh,
+  SpeakerSlash,
   Stop,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -25,9 +27,22 @@ export function LivePage({ context }: { context: AppContext }) {
   const streamRef = useRef<MediaStream | null>(null);
   const inFlightRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
+  const redAlertTimerRef = useRef<number | undefined>(undefined);
+  const activeRunRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const sessionRef = useRef(makeSessionId());
+  const alertAudioRef = useRef<HTMLAudioElement>(null);
+  const initialAlertSoundEnabled = (() => {
+    try {
+      return window.localStorage.getItem(ALERT_SOUND_PREFERENCE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  })();
+  const alertSoundEnabledRef = useRef(initialAlertSoundEnabled);
+  const lastAlertSoundAtRef = useRef(0);
+  const lastPlayedAlertSequenceRef = useRef(0);
 
   const [monitor, setMonitor] = useState<MonitorState>("idle");
   const [systemError, setSystemError] = useState("");
@@ -38,6 +53,11 @@ export function LivePage({ context }: { context: AppContext }) {
   const [latestRecord, setLatestRecord] = useState<{ id: string | number; source: string }>();
   const [notificationState, setNotificationState] = useState("等待风险事件");
   const [recording, setRecording] = useState(false);
+  const [alertSoundEnabled, setAlertSoundEnabled] = useState(initialAlertSoundEnabled);
+  const [alertSoundState, setAlertSoundState] = useState(
+    initialAlertSoundEnabled ? "连接摄像头后启用" : "声音告警已关闭",
+  );
+  const [redAlertMessage, setRedAlertMessage] = useState("");
 
   const clearTimer = () => {
     if (timerRef.current !== undefined) window.clearInterval(timerRef.current);
@@ -45,20 +65,93 @@ export function LivePage({ context }: { context: AppContext }) {
   };
 
   const releaseMedia = () => {
+    activeRunRef.current += 1;
+    inFlightRef.current = false;
     clearTimer();
     recorderRef.current?.state === "recording" && recorderRef.current.stop();
     recorderRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    if (alertAudioRef.current) {
+      alertAudioRef.current.pause();
+      alertAudioRef.current.currentTime = 0;
+    }
     setRecording(false);
   };
 
+  const unlockAlertSound = async () => {
+    const audio = alertAudioRef.current;
+    if (!audio || !alertSoundEnabledRef.current) return;
+    try {
+      audio.muted = true;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+      setAlertSoundState("声音告警已就绪");
+    } catch {
+      audio.muted = false;
+      setAlertSoundState("声音未解锁，请点击声音告警重新启用");
+    }
+  };
+
+  const playAlertSound = async (testOnly = false) => {
+    const audio = alertAudioRef.current;
+    const now = Date.now();
+    if (!audio || !alertSoundEnabledRef.current) return;
+    if (!testOnly && now - lastAlertSoundAtRef.current < 5000) return;
+    if (!testOnly) lastAlertSoundAtRef.current = now;
+    try {
+      audio.muted = false;
+      audio.currentTime = 0;
+      await audio.play();
+      setAlertSoundState(testOnly ? "测试声音已播放" : "红色风险声音已触发");
+    } catch {
+      setAlertSoundState("声音被浏览器拦截，请点击声音告警重新启用");
+    }
+  };
+
+  const toggleAlertSound = async () => {
+    if (alertSoundEnabledRef.current) {
+      alertAudioRef.current?.pause();
+      alertSoundEnabledRef.current = false;
+      setAlertSoundEnabled(false);
+      setAlertSoundState("声音告警已关闭");
+      try {
+        window.localStorage.setItem(ALERT_SOUND_PREFERENCE_KEY, "off");
+      } catch {
+        // 本机偏好保存失败不影响检测和声音开关。
+      }
+      return;
+    }
+    alertSoundEnabledRef.current = true;
+    setAlertSoundEnabled(true);
+    try {
+      window.localStorage.setItem(ALERT_SOUND_PREFERENCE_KEY, "on");
+    } catch {
+      // 本机偏好保存失败不影响检测和声音开关。
+    }
+    await unlockAlertSound();
+  };
+
+  const announceRedAlert = () => {
+    if (redAlertTimerRef.current !== undefined) window.clearTimeout(redAlertTimerRef.current);
+    setRedAlertMessage("红色风险：检测到未戴安全帽，请立即停止相关作业并现场核查。");
+    redAlertTimerRef.current = window.setTimeout(() => {
+      setRedAlertMessage("");
+      redAlertTimerRef.current = undefined;
+    }, 2000);
+  };
+
   useEffect(() => {
-    return () => releaseMedia();
+    return () => {
+      releaseMedia();
+      if (redAlertTimerRef.current !== undefined) window.clearTimeout(redAlertTimerRef.current);
+    };
   }, []);
 
-  const processFrame = async () => {
+  const processFrame = async (runId = activeRunRef.current) => {
     if (inFlightRef.current || monitor !== "running") return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -79,11 +172,20 @@ export function LivePage({ context }: { context: AppContext }) {
         context.projectName.trim(),
         context.inspector.trim(),
       );
+      if (runId !== activeRunRef.current || !streamRef.current) return;
       const nextDetections = normalizeDetections(response.detections);
       const session = ((response.session ?? {}) || {}) as Record<string, unknown>;
       const storedEvents = Array.isArray(response.stored_events) ? response.stored_events : [];
       setDetections(nextDetections);
-      setRisk(normalizeRisk(response.risk));
+      const nextRisk = normalizeRisk(response.risk);
+      setRisk(nextRisk);
+      const audibleAlert = ((response.audible_alert ?? {}) || {}) as Record<string, unknown>;
+      const alertSequence = Number(audibleAlert.sequence ?? 0);
+      if (audibleAlert.triggered === true && alertSequence > lastPlayedAlertSequenceRef.current) {
+        lastPlayedAlertSequenceRef.current = alertSequence;
+        announceRedAlert();
+        void playAlertSound();
+      }
       setViolations(Number(session.observed_violations ?? 0));
       setStored(Number(session.stored_count ?? 0));
       const latest = storedEvents.at(-1) as Record<string, unknown> | undefined;
@@ -127,6 +229,8 @@ export function LivePage({ context }: { context: AppContext }) {
     }
     setSystemError("");
     setMonitor("requesting");
+    activeRunRef.current += 1;
+    if (alertSoundEnabledRef.current) await unlockAlertSound();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" },
@@ -154,13 +258,15 @@ export function LivePage({ context }: { context: AppContext }) {
   useEffect(() => {
     if (monitor !== "running") return;
     clearTimer();
-    timerRef.current = window.setInterval(() => void processFrame(), 1200);
+    const runId = activeRunRef.current;
+    timerRef.current = window.setInterval(() => void processFrame(runId), 1200);
     return clearTimer;
   }, [monitor, context.projectName, context.inspector]);
 
   const stopCamera = async () => {
     releaseMedia();
     setMonitor("stopped");
+    setRedAlertMessage("");
   };
 
   const resetSession = async () => {
@@ -177,9 +283,12 @@ export function LivePage({ context }: { context: AppContext }) {
     setDetections([]);
     setViolations(0);
     setStored(0);
+    lastPlayedAlertSequenceRef.current = 0;
+    lastAlertSoundAtRef.current = 0;
     setLatestRecord(undefined);
     setNotificationState("等待风险事件");
     setSystemError("");
+    setRedAlertMessage("");
   };
 
   const toggleRecording = () => {
@@ -267,9 +376,14 @@ export function LivePage({ context }: { context: AppContext }) {
               {recording ? <DownloadSimple size={20} aria-hidden="true" /> : <Record size={20} aria-hidden="true" />}
               {recording ? "停止并下载" : "本机录制"}
             </Button>
+            <Button tone="neutral" onClick={() => void toggleAlertSound()}>
+              {alertSoundEnabled ? <SpeakerHigh size={20} aria-hidden="true" /> : <SpeakerSlash size={20} aria-hidden="true" />}
+              {alertSoundEnabled ? "声音告警开启" : "声音告警关闭"}
+            </Button>
             <button className="text-button" onClick={resetSession}>重置本次会话</button>
           </div>
           <canvas ref={canvasRef} hidden />
+          <audio ref={alertAudioRef} src={ALERT_SOUND_URL} preload="auto" aria-hidden="true" />
         </section>
 
         <aside className="live-command">
@@ -291,6 +405,13 @@ export function LivePage({ context }: { context: AppContext }) {
             </div>
           </div>
 
+          {redAlertMessage ? (
+            <div className="red-alert-banner" role="alert">
+              <WarningCircle size={19} weight="fill" aria-hidden="true" />
+              {redAlertMessage}
+            </div>
+          ) : null}
+
           <div className="state-stack">
             <section>
               <span>监测状态</span>
@@ -306,6 +427,18 @@ export function LivePage({ context }: { context: AppContext }) {
               <span>系统状态</span>
               <strong>{systemError ? "需要处理" : "检测链路正常"}</strong>
               <p>{systemError || notificationState}</p>
+            </section>
+            <section>
+              <span>声音告警</span>
+              <strong>{alertSoundEnabled ? "红色风险启用" : "已静音"}</strong>
+              <p role="status">{alertSoundState}</p>
+              <button
+                className="text-button sound-test"
+                disabled={!alertSoundEnabled}
+                onClick={() => void playAlertSound(true)}
+              >
+                测试声音
+              </button>
             </section>
           </div>
 
@@ -330,3 +463,5 @@ export function LivePage({ context }: { context: AppContext }) {
 }
 
 const SAMPLE_URL = "/api/sample";
+const ALERT_SOUND_URL = "/api/alert-sound";
+const ALERT_SOUND_PREFERENCE_KEY = "site-safety-alert-sound";

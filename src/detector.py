@@ -192,7 +192,7 @@ class HazardDetector:
         return {
             "image": annotated_path,
             "detections": detections,
-            "alerts": [],  # 由 AlertEngine 生成(app.py 调用),此处留空保持返回结构兼容
+            "alerts": [],  # 由调用层通过 AlertEngine 生成，此处留空保持返回结构兼容
             "summary": summary,
         }
 

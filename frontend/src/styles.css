@@ -466,6 +466,10 @@ dd {
   align-items: stretch;
 }
 
+.live-layout {
+  align-items: start;
+}
+
 .evidence-bench,
 .live-stage,
 .video-stage {
@@ -1105,6 +1109,25 @@ dd {
   color: var(--red);
   font-size: 0.74rem;
   line-height: 1.45;
+}
+
+.red-alert-banner {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #d59893;
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.sound-test {
+  min-height: 44px;
+  margin-top: 4px;
 }
 
 .boundary-notice {

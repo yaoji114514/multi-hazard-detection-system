@@ -21,14 +21,9 @@ required = {
     "fastapi": "V3 本地 API",
     "uvicorn": "V3 本地服务",
     "multipart": "文件上传解析",
-    "streamlit": "经典回滚界面",
     "cv2": "OpenCV 图像处理",
     "PIL": "Pillow 图像库",
-    "pandas": "数据处理",
-    "plotly": "图表可视化",
     "imageio_ffmpeg": "视频转码",
-    "av": "WebRTC 视频帧处理",
-    "streamlit_webrtc": "实时视频流",
 }
 
 print("[1/5] 验证核心依赖...")
@@ -106,13 +101,17 @@ try:
     from database import Database
     from src.web_api import app as web_app
     frontend_index = Path(__file__).parent / "frontend" / "dist" / "index.html"
+    alert_sound = Path(__file__).parent / "data" / "alert.wav"
     if not frontend_index.is_file():
         raise FileNotFoundError(f"V3 前端构建产物缺失: {frontend_index}")
+    if not alert_sound.is_file():
+        raise FileNotFoundError(f"红色风险警报音缺失: {alert_sound}")
     print("  [OK] src/detector.py (检测模块)")
     print("  [OK] src/alert.py (预警模块)")
     print("  [OK] src/database.py (数据存储模块)")
     print(f"  [OK] {web_app.title} (V3 本地 API)")
     print("  [OK] frontend/dist/index.html (V3 前端)")
+    print("  [OK] data/alert.wav (红色风险警报音)")
 except Exception as e:
     print(f"  [失败] 源码模块导入失败: {e}")
     sys.exit(1)
@@ -124,6 +123,5 @@ print("""
 启动方式:
   双击 run.bat
   或命令行: .venv\\Scripts\\python.exe -m uvicorn src.web_api:app --host 127.0.0.1 --port 8501
-  经典界面: run_legacy.bat
   访问地址: http://localhost:8501
 """)

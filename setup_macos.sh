@@ -46,9 +46,8 @@ fi
 echo "[4/5] 正在安装项目依赖..."
 "$PYTHON_BIN" -m pip install -r requirements.txt
 
-echo "[5/5] 正在初始化本地目录与 Streamlit 配置..."
+echo "[5/5] 正在初始化本地数据目录..."
 mkdir -p data/uploads data/db
-"$PYTHON_BIN" src/configure_streamlit.py
 
 DEVICE="$($PYTHON_BIN -c 'import torch; mps = getattr(getattr(torch, "backends", None), "mps", None); print("Apple Silicon MPS" if mps and mps.is_available() else "CPU")')"
 echo

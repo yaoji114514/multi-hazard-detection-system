@@ -21,6 +21,12 @@ class DemoPackageTests(unittest.TestCase):
         self.assertNotIn("README.md", relative_paths)
         self.assertNotIn("run_annotate.bat", relative_paths)
         self.assertNotIn("run_annotate_macos.sh", relative_paths)
+        self.assertNotIn("app.py", relative_paths)
+        self.assertNotIn("run_v3.bat", relative_paths)
+        self.assertNotIn("run_legacy.bat", relative_paths)
+        self.assertNotIn("run_legacy_macos.sh", relative_paths)
+        self.assertIn("data/alert.wav", relative_paths)
+        self.assertFalse(any(path.startswith(".streamlit/") for path in relative_paths))
         self.assertNotIn("tools/annotate_server.py", relative_paths)
         self.assertNotIn("verify_gpu.py", relative_paths)
         self.assertNotIn("verify_install.py", relative_paths)
@@ -37,8 +43,7 @@ class DemoPackageTests(unittest.TestCase):
         }
 
         self.assertTrue({
-            "setup.bat", "run.bat", "run_v3.bat", "run_legacy.bat",
-            "setup.py", "setup_macos.sh", "run_macos.sh", "run_legacy_macos.sh",
+            "setup.bat", "run.bat", "setup.py", "setup_macos.sh", "run_macos.sh",
         }.issubset(relative_paths))
         self.assertIn("frontend/dist/index.html", relative_paths)
         self.assertTrue(any(path.startswith("frontend/dist/assets/") for path in relative_paths))
@@ -50,9 +55,8 @@ class DemoPackageTests(unittest.TestCase):
         }
 
         allowed_roots = {
-            ".streamlit", "config", "data", "frontend", "models", "src",
-            "app.py", "requirements.txt", "run.bat", "run_v3.bat", "run_legacy.bat",
-            "run_macos.sh", "run_legacy_macos.sh", "setup.bat", "setup.py",
+            "config", "data", "frontend", "models", "src",
+            "requirements.txt", "run.bat", "run_macos.sh", "setup.bat", "setup.py",
             "setup_macos.sh", "使用说明.md",
         }
         self.assertTrue(all(path.split("/", 1)[0] in allowed_roots for path in relative_paths))

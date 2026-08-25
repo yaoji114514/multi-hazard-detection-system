@@ -447,6 +447,7 @@ def _normalise_incident(record: dict[str, Any], source_type: str) -> dict[str, A
         item["evidence_url"] = _media_url_for_path(item.pop("result_image_path", None))
     else:
         item["risk"] = "red" if item.get("level") == "red" else "yellow"
+        item["violation_summary"] = _realtime_violation_summary(item.get("violation_type"))
         item["evidence_url"] = _media_url_for_path(item.pop("snapshot_path", None))
     item.pop("id", None)
     return item
@@ -970,12 +971,19 @@ def _notification_retry_delay(retry_count: int) -> float:
     return NOTIFICATION_RETRY_DELAYS[index]
 
 
+def _realtime_violation_summary(value: Any) -> str:
+    """Turn the stored comma-separated violation types into a readable summary."""
+    types = [item.strip() for item in str(value or "").split(",") if item.strip()]
+    return "、".join(HazardDetector.LABEL_CN.get(item, item) for item in types)
+
+
 def _realtime_notification_text(batch: dict[str, Any]) -> str:
     counts = Counter()
     record_ids = []
     for event in batch["events"]:
-        counts[event["violation_type"]] += int(event["count"])
         record_ids.append(str(event["record_id"]))
+        for violation in event.get("violations", []):
+            counts[str(violation["violation_type"])] += int(violation["count"])
     details = "\n".join(
         f"- {HazardDetector.LABEL_CN.get(name, name)} × {count}"
         for name, count in counts.items()
@@ -1155,17 +1163,26 @@ async def realtime_frame(
     stored_events = []
     notification_events = []
     detector = get_detector()
-    for violation_type in eligible:
+    if eligible:
         SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         snapshot_path = SNAPSHOTS_DIR / (
-            f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:10]}_{violation_type}.jpg"
+            f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:10]}_realtime-incident.jpg"
+        )
+        violation_types = list(eligible)
+        violation_details = [
+            {"violation_type": violation_type, "count": int(violations[violation_type])}
+            for violation_type in violation_types
+        ]
+        level = (
+            "red"
+            if any(HazardDetector.ALERT_LEVELS.get(item, ("yellow",))[0] == "red" for item in violation_types)
+            else "yellow"
         )
         try:
             snapshot_path.write_bytes(data)
-            level = HazardDetector.ALERT_LEVELS.get(violation_type, ("yellow",))[0]
             record_id = get_database().save_realtime_violation(
-                violation_type=violation_type,
-                violation_count=int(violations[violation_type]),
+                violation_type=",".join(violation_types),
+                violation_count=sum(item["count"] for item in violation_details),
                 level=level,
                 snapshot_path=str(snapshot_path),
                 project_name=project,
@@ -1182,19 +1199,20 @@ async def realtime_frame(
                 state["stored_count"] += 1
             stored_events.append({
                 "record_id": int(record_id),
-                "violation_type": violation_type,
+                "violation_types": violation_types,
+                "violation_summary": _realtime_violation_summary(",".join(violation_types)),
                 "risk": level,
                 "evidence_url": _media_url_for_path(snapshot_path),
             })
             notification_events.append({
                 "record_id": int(record_id),
-                "violation_type": violation_type,
-                "count": int(violations[violation_type]),
+                "violations": violation_details,
                 "snapshot_path": str(snapshot_path),
             })
         finally:
             with _realtime_lock:
-                state["_inflight"].discard(violation_type)
+                for violation_type in eligible:
+                    state["_inflight"].discard(violation_type)
     _enqueue_realtime_notification(
         session_id, project, checker, notification_events
     )

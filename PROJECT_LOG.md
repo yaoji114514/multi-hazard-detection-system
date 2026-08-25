@@ -1,5 +1,26 @@
 # 项目共享日志
 
+## 2026-08-23 20:22 - 合并同帧个人防护违规报告
+
+- 任务：纠正上一条对“报告过密”的误解；用户需要同一检测画面内的多项个人防护违规合并展示，而非延长报告时间间隔。
+- 改动：撤销 5 分钟报告冷却，恢复原有 60 秒同类短时去重。`src/web_api.py` 现在把同一实时帧中新出现的多个违规类型合并为一张证据、一条实时处置记录和一则通知，记录及通知保留各项风险明细并按最高等级定级；`src/database.py` 仅补充既有字段的组合值说明，不迁移或改写历史数据。处置详情增加合并风险明细展示，重建 `frontend/dist/`；`tests/test_web_api.py` 覆盖“安全帽和反光衣违规合为一条红色记录、两项明细仍保留”。
+- 验证：`.venv\\Scripts\\python.exe -m py_compile src\\web_api.py src\\database.py`、`tests.test_web_api`（14 项）、完整 `unittest discover`（89 项）、`frontend` 的 `npm run build`、`run.bat --check` 和 `git diff --check` 均通过。
+- 遗留：当前模型没有跨帧人员追踪，合并边界为同一实时帧；不同时间或不同帧的新风险仍按现有规则独立处理。
+
+## 2026-08-23 20:17 - 降低实时检测报告密度
+
+- 任务：保留实时检测框显示，但避免连续相同风险过密地生成处置报告和通知。
+- 改动：`src/web_api.py` 将同一实时会话、同一违规类型的报告冷却时间从 60 秒调整为 5 分钟；画面仍逐帧检测并返回检测框，不同违规类型仍即时建档。`tests/test_web_api.py` 新增冷却期内不建档、满 5 分钟后再次建档且每帧仍返回检测框的回归测试；`使用说明.md` 补充使用边界。
+- 验证：`.venv\\Scripts\\python.exe -m py_compile src\\web_api.py`、`.venv\\Scripts\\python.exe -m unittest tests.test_web_api -v`（14 项）、`.venv\\Scripts\\python.exe -m unittest discover -s tests -v`（89 项）、`run.bat --check` 和 `git diff --check` 均通过。
+- 遗留：该冷却以浏览器实时会话和违规类型为单位；重置会话后会重新开始计时。
+
+## 2026-08-23 16:05 - 实时检测空状态改为无摄像头信号
+
+- 任务：按用户建议移除实时检测未连接状态中的演示图片，避免把样例检测框误认为实时画面。
+- 改动：`frontend/src/pages/LivePage.tsx` 不再加载内置示例图；首次进入显示“暂未连接摄像头”和连接后的结果说明，停止监测后显示“摄像头信号已断开”和重新连接提示。`frontend/src/styles.css` 新增与石墨证据舞台一致的无信号空状态，并清理摄像头示例图专属样式；实际视频、检测框、声音告警和控制区逻辑不变。同步重建 `frontend/dist/`。
+- 验证：React production build 与 `git diff --check` 通过；受控浏览器在 1440×900 和 390×844 视口确认无演示图片、无横向溢出，文案可由辅助技术读取，控制台无错误；Impeccable detector 返回 0 项。未请求摄像头权限或改写业务数据。
+- 遗留：无。
+
 ## 2026-08-22 20:41 - 在 React 实时页恢复红色风险声音告警
 
 - 任务：补回旧界面曾具备、V3 初版遗漏的实时红色风险本地警报音，同时保持新架构的风险、存储和通知状态分离。

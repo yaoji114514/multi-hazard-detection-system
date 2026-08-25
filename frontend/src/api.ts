@@ -165,6 +165,7 @@ function normalizeIncident(rawValue: unknown, index: number): Incident {
     reviewer: String(pick(raw, "closed_by", "reviewer", "reviewed_by") ?? ""),
     dueDate: String(pick(raw, "due_at", "due_date", "deadline") ?? ""),
     notes: String(pick(raw, "resolution_note", "notes", "disposition", "remark") ?? ""),
+    violationSummary: String(pick(raw, "violation_summary", "violation_type") ?? ""),
     detections: normalizeDetections(pick(raw, "detections", "objects", "boxes")),
   };
 }

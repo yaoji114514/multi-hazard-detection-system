@@ -330,6 +330,10 @@ export function LivePage({ context }: { context: AppContext }) {
     running: "监测正在运行",
     stopped: "监测已停止",
   }[monitor];
+  const signalTitle = monitor === "stopped" ? "摄像头信号已断开" : "暂未连接摄像头";
+  const signalDetail = monitor === "stopped"
+    ? "重新连接后将在此恢复实时画面。"
+    : "点击“连接摄像头”后，实时画面和检测框将在此显示。";
 
   return (
     <div className="page page--live">
@@ -348,7 +352,11 @@ export function LivePage({ context }: { context: AppContext }) {
             </div>
           </header>
           <div className="camera-frame">
-            <img className={monitor === "running" ? "is-hidden" : ""} src={SAMPLE_URL} alt="摄像头连接前的现场示例" />
+            <div className={`camera-empty-state ${monitor === "running" ? "is-hidden" : ""}`} role="status">
+              <Camera size={42} weight="thin" aria-hidden="true" />
+              <strong>{signalTitle}</strong>
+              <span>{signalDetail}</span>
+            </div>
             <video ref={videoRef} muted playsInline className={monitor === "running" ? "" : "is-hidden"} />
             {monitor === "running" ? (
               <DetectionOverlay
@@ -462,6 +470,5 @@ export function LivePage({ context }: { context: AppContext }) {
   );
 }
 
-const SAMPLE_URL = "/api/sample";
 const ALERT_SOUND_URL = "/api/alert-sound";
 const ALERT_SOUND_PREFERENCE_KEY = "site-safety-alert-sound";

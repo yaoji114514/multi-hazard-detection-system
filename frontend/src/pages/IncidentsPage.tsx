@@ -244,6 +244,7 @@ export function IncidentsPage({ context, params }: { context: AppContext; params
                 <div><dt>来源</dt><dd><SourceMark source={selected.source} /></dd></div>
                 <div><dt>检查人</dt><dd>{selected.inspector || "未记录"}</dd></div>
                 <div><dt>发现时间</dt><dd>{selected.createdAt || "未记录"}</dd></div>
+                {selected.violationSummary ? <div><dt>风险明细</dt><dd>{selected.violationSummary}</dd></div> : null}
               </dl>
 
               <form

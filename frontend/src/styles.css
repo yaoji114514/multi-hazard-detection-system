@@ -573,7 +573,6 @@ dd {
 }
 
 .evidence-frame img,
-.camera-frame img,
 .camera-frame video,
 .video-frame video {
   width: 100%;
@@ -582,9 +581,38 @@ dd {
   object-fit: contain;
 }
 
-.evidence-frame img,
-.camera-frame img {
+.evidence-frame img {
   user-select: none;
+}
+
+.camera-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: #0b0f12;
+  color: #c7ced3;
+  text-align: center;
+}
+
+.camera-empty-state svg {
+  color: #7f8a92;
+}
+
+.camera-empty-state strong {
+  color: #f2f4f4;
+  font-size: 1rem;
+}
+
+.camera-empty-state span {
+  max-width: 34ch;
+  color: #aab3b9;
+  font-size: 0.76rem;
+  line-height: 1.55;
 }
 
 .evidence-frame.is-processing img {

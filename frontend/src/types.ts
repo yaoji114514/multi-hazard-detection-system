@@ -48,6 +48,7 @@ export interface Incident {
   reviewer?: string;
   dueDate?: string;
   notes?: string;
+  violationSummary?: string;
   detections?: Detection[];
 }
 

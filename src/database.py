@@ -405,8 +405,8 @@ class Database:
         """保存一条实时违规事件(经节流后入库,非每帧写)
 
         参数:
-            violation_type: no-helmet / no-vest / no-mask
-            violation_count: 本帧该类违规目标数
+            violation_type: 单类或逗号分隔的同帧违规组合，例如 no-helmet,no-vest
+            violation_count: 本帧该事件内的违规目标总数
             level: red / yellow (由 app 回调从 detector.ALERT_LEVELS 取后传入)
             snapshot_path: 违规截图路径(任务#5 抓拍留痕用,暂留空)
         """

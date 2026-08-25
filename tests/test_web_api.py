@@ -95,6 +95,7 @@ class FakeDetector:
 
     def __init__(self):
         self.frame_label = "no-helmet"
+        self.frame_labels = None
 
     def detect(self, image_path, conf=0.4):
         annotated = web_api.UPLOADS_DIR / "annotated.jpg"
@@ -121,16 +122,19 @@ class FakeDetector:
                 "detections": [],
                 "summary": web_api._summary_from_detections([]),
             }
-        is_red = self.frame_label == "no-helmet"
-        detections = [{
-            "label": "未戴安全帽" if is_red else "未穿反光衣",
-            "label_en": self.frame_label,
-            "confidence": 0.88,
-            "bbox": [1, 2, 20, 30],
-            "alert_level": "red" if is_red else "yellow",
-            "alert_name": "红色预警" if is_red else "黄色预警",
-            "description": "现场存在个人防护隐患",
-        }]
+        labels = self.frame_labels or [self.frame_label]
+        detections = []
+        for label in labels:
+            is_red = label == "no-helmet"
+            detections.append({
+                "label": "未戴安全帽" if is_red else "未穿反光衣",
+                "label_en": label,
+                "confidence": 0.88,
+                "bbox": [1, 2, 20, 30],
+                "alert_level": "red" if is_red else "yellow",
+                "alert_name": "红色预警" if is_red else "黄色预警",
+                "description": "现场存在个人防护隐患",
+            })
         return {"detections": detections, "summary": web_api._summary_from_detections(detections)}
 
 
@@ -387,6 +391,42 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual({"triggered": False, "sequence": 1}, recovered["audible_alert"])
         reset = web_api.reset_realtime_session("camera-1")
         self.assertEqual(0, reset["red_alert_sequence"])
+
+    def test_realtime_combines_same_frame_violation_types_into_one_report(self):
+        self.detector.frame_labels = ["no-helmet", "no-vest"]
+        response = asyncio.run(
+            web_api.realtime_frame(
+                UploadFile(io.BytesIO(jpeg_bytes()), filename="frame.jpg"),
+                project_name="一标段",
+                inspector="王工",
+                session="camera-combined",
+                confidence=0.4,
+            )
+        )
+
+        self.assertEqual(60.0, web_api.REALTIME_COOLDOWN_SECONDS)
+        self.assertEqual(2, len(response["detections"]))
+        self.assertEqual(1, len(response["stored_events"]))
+        self.assertEqual("未戴安全帽、未穿反光衣", response["stored_events"][0]["violation_summary"])
+        self.assertEqual(1, len(self.database.realtime_records))
+        record = self.database.realtime_records[0]
+        self.assertEqual("no-helmet,no-vest", record["violation_type"])
+        self.assertEqual(2, record["violation_count"])
+        self.assertEqual("red", record["level"])
+        self.assertIn(
+            "未戴安全帽 × 1\n- 未穿反光衣 × 1",
+            web_api._realtime_notification_text({
+                "project": "一标段",
+                "inspector": "王工",
+                "events": [{
+                    "record_id": 1,
+                    "violations": [
+                        {"violation_type": "no-helmet", "count": 1},
+                        {"violation_type": "no-vest", "count": 1},
+                    ],
+                }],
+            }),
+        )
 
     def test_realtime_inference_without_violation_is_blue(self):
         self.detector.frame_label = None

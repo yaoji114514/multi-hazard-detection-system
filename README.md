@@ -67,7 +67,3 @@ macOS：
 .\.venv\Scripts\python.exe -m coverage run -m unittest discover -s tests
 .\.venv\Scripts\python.exe -m coverage report
 ```
-
-## 协作
-
-所有参与项目的对话在开始工作前读取 `AGENTS.md` 和 `PROJECT_LOG.md`，完成工作后更新共享日志。
